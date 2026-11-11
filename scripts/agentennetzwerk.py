@@ -25,6 +25,9 @@ MIT_SUCHE = os.environ.get("NETZWERK_MIT_SUCHE", "0") == "1"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODELL = os.environ.get("OLLAMA_MODELL", "llama3.1:8b")
 HERMES_MODELL = os.environ.get("HERMES_MODELL", "hermes3:8b")
+CLOUD_BASE_URL = os.environ.get("CLOUD_BASE_URL", "https://openrouter.ai/api/v1")
+CLOUD_API_KEY = os.environ.get("CLOUD_API_KEY", "")
+CLOUD_MODELL = os.environ.get("CLOUD_MODELL", "meta-llama/llama-3.3-70b-instruct:free")
 MAX_PARALLEL = int(os.environ.get("NETZWERK_MAX_PARALLEL", "3"))
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,9 +36,10 @@ AUSGABEN_DIR = REPO_ROOT / "ausgaben"
 
 _drossel = asyncio.Semaphore(MAX_PARALLEL)
 _ersatz_ketten = {
-    "gemini": ["ollama", "hermes"],
-    "ollama": ["gemini", "hermes"],
-    "hermes": ["gemini", "ollama"],
+    "gemini": ["cloud", "ollama", "hermes"],
+    "cloud": ["gemini", "ollama", "hermes"],
+    "ollama": ["hermes", "gemini", "cloud"],
+    "hermes": ["ollama", "gemini", "cloud"],
 }
 _verwendete_backends: dict[str, str] = {}
 _backend_status: dict[str, bool | None] = {"ollama": None}
@@ -44,11 +48,11 @@ _bekannte_namen = sorted(rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGE
 
 
 def _primares_backend(rolle: AgentenRolle) -> str:
-    if BACKEND in ("gemini", "ollama", "hermes"):
+    if BACKEND in ("gemini", "ollama", "hermes", "cloud"):
         return BACKEND
     if BACKEND == "hybrid":
         if rolle.name in _bekannte_namen:
-            return ("gemini", "ollama", "hermes")[_bekannte_namen.index(rolle.name) % 3]
+            return ("gemini", "cloud", "ollama", "hermes")[_bekannte_namen.index(rolle.name) % 4]
         return "gemini"
     raise ValueError(f"Unbekanntes Backend: {BACKEND}")
 
@@ -60,9 +64,9 @@ def _system_anweisung(rolle: AgentenRolle, backend: str) -> str:
             "Hinweis: Du hast keinen Internetzugang. Arbeite mit deinem eigenen Wissen und "
             "kennzeichne veraltete oder unsichere Angaben als offen. " + system
         )
-    if backend in ("ollama", "hermes"):
+    if backend in ("ollama", "hermes", "cloud"):
         system = (
-            "Hinweis: Du arbeitest lokal ohne Internetzugang. Nutze dein eigenes Wissen "
+            "Hinweis: Du hast keinen Internetzugang. Nutze dein eigenes Wissen "
             "und kennzeichne unsichere Angaben als offen. " + system
         )
     return system
@@ -95,6 +99,23 @@ async def _hermes_chat(system: str, nutzer: str) -> str:
     return await _ollama_chat(system, nutzer, modell=HERMES_MODELL)
 
 
+async def _cloud_chat(system: str, nutzer: str) -> str:
+    async with httpx.AsyncClient(timeout=600) as client:
+        antwort = await client.post(
+            f"{CLOUD_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {CLOUD_API_KEY}"},
+            json={
+                "model": CLOUD_MODELL,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": nutzer},
+                ],
+            },
+        )
+        antwort.raise_for_status()
+        return antwort.json()["choices"][0]["message"]["content"].strip()
+
+
 async def _gemini_chat(system: str, nutzer: str) -> str:
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     antwort = await client.aio.models.generate_content(
@@ -111,12 +132,16 @@ async def _chat_mit(backend: str, rolle: AgentenRolle, nutzer: str) -> str:
         return await _ollama_chat(system, nutzer)
     if backend == "hermes":
         return await _hermes_chat(system, nutzer)
+    if backend == "cloud":
+        return await _cloud_chat(system, nutzer)
     return await _gemini_chat(system, nutzer)
 
 
 async def _backend_verfuegbar(backend: str) -> bool:
     if backend == "gemini":
         return True
+    if backend == "cloud":
+        return bool(CLOUD_API_KEY)
     if _backend_status["ollama"] is not None:
         return _backend_status["ollama"]
     try:
@@ -241,7 +266,9 @@ async def main() -> None:
     if BACKEND in ("gemini", "hybrid") and not os.environ.get("GEMINI_API_KEY"):
         if BACKEND == "gemini":
             raise SystemExit("GEMINI_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama nutzen).")
-        print("Hinweis: Kein GEMINI_API_KEY gesetzt - im Hybrid-Modus uebernimmt Ollama alles.")
+        print("Hinweis: Kein GEMINI_API_KEY gesetzt - im Hybrid-Modus uebernehmen die anderen Backends.")
+    if BACKEND == "cloud" and not CLOUD_API_KEY:
+        raise SystemExit("CLOUD_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama/hermes nutzen).")
 
     auftrag = " ".join(sys.argv[1:]) or STANDARD_AUFTRAG
     zeitstempel = datetime.now(timezone.utc)

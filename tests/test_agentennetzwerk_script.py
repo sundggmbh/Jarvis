@@ -65,6 +65,7 @@ async def test_ollama_backend_wird_genutzt(script, monkeypatch):
 
 async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "hybrid")
+    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
     modul = _lade_script()
     modul._verwendete_backends.clear()
     modul._backend_status["ollama"] = True
@@ -78,15 +79,19 @@ async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     async def fake_hermes(system, nutzer):
         return "h"
 
+    async def fake_cloud(system, nutzer):
+        return "c"
+
     monkeypatch.setattr(modul, "_gemini_chat", fake_gemini)
     monkeypatch.setattr(modul, "_ollama_chat", fake_ollama)
     monkeypatch.setattr(modul, "_hermes_chat", fake_hermes)
+    monkeypatch.setattr(modul, "_cloud_chat", fake_cloud)
 
     for name in modul._bekannte_namen:
         await modul.frage_agent(_rolle(name), "hallo")
 
     verteilung = set(modul._verwendete_backends.values())
-    assert verteilung == {"gemini", "ollama", "hermes"}
+    assert verteilung == {"gemini", "ollama", "hermes", "cloud"}
     assert len(modul._verwendete_backends) == len(modul._bekannte_namen)
 
 
@@ -102,6 +107,38 @@ async def test_hermes_backend_wird_genutzt(script, monkeypatch):
     text = await modul.frage_agent(_rolle("content-agent"), "hallo")
     assert text == "Hermes-Antwort"
     assert modul._verwendete_backends["content-agent"] == "hermes"
+
+
+async def test_cloud_backend_wird_genutzt(script, monkeypatch):
+    monkeypatch.setenv("NETZWERK_BACKEND", "cloud")
+    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
+    modul = _lade_script()
+    modul._verwendete_backends.clear()
+
+    async def fake(system, nutzer):
+        return "Cloud-Antwort"
+
+    monkeypatch.setattr(modul, "_cloud_chat", fake)
+    text = await modul.frage_agent(_rolle("risiko-agent"), "hallo")
+    assert text == "Cloud-Antwort"
+    assert modul._verwendete_backends["risiko-agent"] == "cloud"
+
+
+async def test_fallback_gemini_zu_cloud_ohne_ollama(script, monkeypatch):
+    script._backend_status["ollama"] = False
+    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
+
+    async def kaputt(system, nutzer):
+        raise RuntimeError("Gemini nicht erreichbar")
+
+    async def cloud_ok(system, nutzer):
+        return "Cloud-Ersatz"
+
+    monkeypatch.setattr(script, "_gemini_chat", kaputt)
+    monkeypatch.setattr(script, "_cloud_chat", cloud_ok)
+    text = await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
+    assert text == "Cloud-Ersatz"
+    assert script._verwendete_backends["marktchancen-agent"] == "cloud"
 
 
 async def test_fallback_kette_bis_hermes(script, monkeypatch):
@@ -221,6 +258,11 @@ async def test_backend_verfuegbar_erkennung(script, monkeypatch):
     assert script._backend_status["ollama"] is True
     assert await script._backend_verfuegbar("gemini") is True
 
+    monkeypatch.setattr(script, "CLOUD_API_KEY", "")
+    assert await script._backend_verfuegbar("cloud") is False
+    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
+    assert await script._backend_verfuegbar("cloud") is True
+
 
 def test_tools_nur_bei_gemini_mit_suche(script, monkeypatch):
     monkeypatch.setattr(script, "MIT_SUCHE", False)
@@ -309,7 +351,9 @@ async def test_system_anweisung_warnt_ohne_suche(script, monkeypatch):
     rolle = _rolle("marktchancen-agent")
     monkeypatch.setattr(script, "MIT_SUCHE", False)
     assert "keinen Internetzugang" in script._system_anweisung(rolle, "gemini")
-    assert "lokal ohne Internetzugang" in script._system_anweisung(rolle, "ollama")
+    assert "keinen Internetzugang" in script._system_anweisung(rolle, "ollama")
+    assert "keinen Internetzugang" in script._system_anweisung(rolle, "hermes")
+    assert "keinen Internetzugang" in script._system_anweisung(rolle, "cloud")
 
     monkeypatch.setattr(script, "MIT_SUCHE", True)
     assert "keinen Internetzugang" not in script._system_anweisung(rolle, "gemini")

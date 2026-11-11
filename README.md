@@ -94,6 +94,39 @@ NETZWERK_BACKEND=hybrid python scripts/agentennetzwerk.py
 
 Anderes Hermes-Modell: `HERMES_MODELL=hermes3:8b` (Umgebungsvariable).
 
+## Zusätzliche Gratis-Cloud (OpenRouter / Groq / Cerebras)
+
+Neben Gemini kann ein zweiter Cloud-Anbieter mit OpenAI-Schnittstelle eingebunden werden (Backend-Name: `cloud`). Alle drei bieten kostenlose Kontingente – der Schlüssel bleibt immer auf dem eigenen PC:
+
+| Anbieter | Schlüssel holen | Basis-URL | Beispiel-Modell (gratis) |
+|---|---|---|---|
+| OpenRouter | openrouter.ai → Keys | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct:free` |
+| Groq | console.groq.com → API Keys | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| Cerebras | cloud.cerebras.ai → API Keys | `https://api.cerebras.ai/v1` | `llama3.1-8b` |
+
+```bash
+set CLOUD_API_KEY=<dein Schluessel>
+set CLOUD_BASE_URL=https://openrouter.ai/api/v1
+set CLOUD_MODELL=meta-llama/llama-3.3-70b-instruct:free
+NETZWERK_BACKEND=cloud python scripts/agentennetzwerk.py
+```
+
+Die Ausfallkette berücksichtigt `cloud` automatisch: Gemini leer → cloud → Ollama → Hermes (und umgekehrt). WICHTIG: API-Schlüssel niemals in den Chat, in E-Mails oder ins Repository schreiben – nur lokal als Umgebungsvariable setzen.
+
+## Schritt-für-Schritt: Komplettes Setup auf dem Windows-PC
+
+1. **Python prüfen:** Eingabeaufforderung öffnen (`Win + R`, `cmd`), eingeben: `python --version` (mindestens 3.11).
+2. **Projekt holen:** `git clone https://github.com/sundggmbh/Jarvis.git` und `cd Jarvis`.
+3. **Pakete installieren:** `pip install google-genai pydantic httpx`.
+4. **Ollama installieren:** Von [ollama.com/download](https://ollama.com/download) herunterladen und installieren.
+5. **Lokale Modelle laden:**
+   - `ollama pull llama3.1:8b` (Ollama-Backend)
+   - `ollama pull hermes3:8b` (Hermes-Backend)
+6. **Schlüssel setzen** (siehe Abschnitte oben): `GEMINI_API_KEY`, optional `CLOUD_API_KEY`, für Telegram `TELEGRAM_BOT_TOKEN` und `GITHUB_TOKEN`.
+7. **Netzwerk testen:** `NETZWERK_BACKEND=hybrid python scripts/agentennetzwerk.py`
+8. **Telegram-Bot starten:** `python scripts/telegram_bot.py` (Fenster offen lassen).
+9. **Vom Handy steuern:** Bot in Telegram öffnen, `/status` senden.
+
 ## Telegram-Fernsteuerung (Handy → Agenten)
 
 Mit einem Telegram-Bot kann das Netzwerk vom Android-Handy aus gesteuert werden – kostenlos:
