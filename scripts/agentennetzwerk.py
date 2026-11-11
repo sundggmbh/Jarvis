@@ -117,10 +117,19 @@ async def _backend_verfuegbar(backend: str) -> bool:
     return _backend_status["ollama"]
 
 
+def _ist_drossel_fehler(fehler: Exception) -> bool:
+    text = str(fehler).upper()
+    return "429" in text or "EXHAUSTED" in text or "RATE" in text or "QUOTA" in text
+
+
+def _kurz(fehler: Exception) -> str:
+    return str(fehler).replace("\n", " ")[:200]
+
+
 async def frage_agent(rolle: AgentenRolle, nutzer: str) -> str:
     primar = _primares_backend(rolle)
     ersatz = _ersatz_backend.get(primar)
-    plan: list[tuple[str, int]] = [(primar, 3)]
+    plan: list[tuple[str, int]] = [(primar, 4)]
     if ersatz and await _backend_verfuegbar(ersatz):
         plan.append((ersatz, 1))
 
@@ -135,11 +144,12 @@ async def frage_agent(rolle: AgentenRolle, nutzer: str) -> str:
             except Exception as fehler:
                 letzter_fehler = fehler
                 if versuch + 1 < max_versuche:
+                    pause = 30 * (versuch + 1) if _ist_drossel_fehler(fehler) else 5 * (versuch + 1)
                     print(
-                        f"  {rolle.name}: {backend} fehlgeschlagen ({type(fehler).__name__}), "
-                        f"wiederhole in {5 * (versuch + 1)}s ..."
+                        f"  {rolle.name}: {backend} fehlgeschlagen ({type(fehler).__name__}: {_kurz(fehler)}), "
+                        f"wiederhole in {pause}s ..."
                     )
-                    await asyncio.sleep(5 * (versuch + 1))
+                    await asyncio.sleep(pause)
     assert letzter_fehler is not None
     raise letzter_fehler
 
@@ -199,8 +209,13 @@ async def produziere_arbeitsproben(zeitstempel: datetime) -> list[tuple[str, Pat
         pfad.write_text(f"# Arbeitsprobe: {rolle.name}\n\n{text}\n", encoding="utf-8")
         return rolle.name, pfad
 
+    async def gestaffelt(index: int, rolle: AgentenRolle) -> tuple[str, Path]:
+        await asyncio.sleep(index * 15)
+        return await eine(rolle)
+
     ergebnisse = await asyncio.gather(
-        *(eine(rolle) for rolle in GESCHAEFTS_AGENTEN), return_exceptions=True
+        *(gestaffelt(index, rolle) for index, rolle in enumerate(GESCHAEFTS_AGENTEN)),
+        return_exceptions=True,
     )
     proben: list[tuple[str, Path]] = []
     for rolle, ergebnis in zip(GESCHAEFTS_AGENTEN, ergebnisse):
@@ -227,15 +242,21 @@ async def main() -> None:
         print(f"  Arbeitsprobe {name}: {pfad}")
 
     print(f"Starte {len(AGENTEN_ROLLEN)} Recherche-Agenten parallel ...")
+
+    async def recherchiert(index: int, rolle: AgentenRolle) -> AgentenBefund:
+        await asyncio.sleep(index * 15)
+        return await agent_recherche(rolle, auftrag)
+
     ergebnisse = await asyncio.gather(
-        *(agent_recherche(rolle, auftrag) for rolle in AGENTEN_ROLLEN), return_exceptions=True
+        *(recherchiert(index, rolle) for index, rolle in enumerate(AGENTEN_ROLLEN)),
+        return_exceptions=True,
     )
     befunde: list[AgentenBefund] = []
     fehler: list[tuple[str, str]] = []
     for rolle, ergebnis in zip(AGENTEN_ROLLEN, ergebnisse):
         if isinstance(ergebnis, BaseException):
             fehler.append((rolle.name, type(ergebnis).__name__))
-            print(f"  FEHLER {rolle.name}: {type(ergebnis).__name__}")
+            print(f"  FEHLER {rolle.name}: {type(ergebnis).__name__}: {_kurz(ergebnis)}")
         else:
             befunde.append(ergebnis)
             print(f"  OK {ergebnis.agent}: {len(ergebnis.befund)} Zeichen")

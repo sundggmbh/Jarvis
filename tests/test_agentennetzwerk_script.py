@@ -30,6 +30,11 @@ def script(monkeypatch):
     modul = _lade_script()
     modul._verwendete_backends.clear()
     modul._backend_status["ollama"] = None
+
+    async def _sofort(_sekunden):
+        return None
+
+    monkeypatch.setattr(modul.asyncio, "sleep", _sofort)
     return modul
 
 
@@ -122,6 +127,13 @@ async def test_fallback_ollama_zu_gemini(script, monkeypatch):
     assert modul._verwendete_backends["content-agent"] == "gemini"
 
 
+def test_drossel_fehler_erkennung(script):
+    assert script._ist_drossel_fehler(RuntimeError("429 RESOURCE_EXHAUSTED"))
+    assert script._ist_drossel_fehler(RuntimeError("quota exceeded"))
+    assert script._ist_drossel_fehler(RuntimeError("Rate limit reached"))
+    assert not script._ist_drossel_fehler(RuntimeError("Verbindung getrennt"))
+
+
 async def test_beide_backends_fehlgeschlagen(script, monkeypatch):
     script._backend_status["ollama"] = True
 
@@ -150,7 +162,7 @@ async def test_fallback_wird_uebersprungen_wenn_ollama_fehlt(script, monkeypatch
     monkeypatch.setattr(script, "_ollama_chat", nie_gerufen)
     with pytest.raises(RuntimeError):
         await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
-    assert aufrufe == ["gemini", "gemini", "gemini"]
+    assert aufrufe == ["gemini", "gemini", "gemini", "gemini"]
 
 
 async def test_backend_verfuegbar_erkennung(script, monkeypatch):
