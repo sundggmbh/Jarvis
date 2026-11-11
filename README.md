@@ -98,11 +98,17 @@ Anderes Hermes-Modell: `HERMES_MODELL=hermes3:8b` (Umgebungsvariable).
 
 Neben Gemini kann ein zweiter Cloud-Anbieter mit OpenAI-Schnittstelle eingebunden werden (Backend-Name: `cloud`). Alle drei bieten kostenlose Kontingente – der Schlüssel bleibt immer auf dem eigenen PC:
 
-| Anbieter | Schlüssel holen | Basis-URL | Beispiel-Modell (gratis) |
-|---|---|---|---|
-| OpenRouter | openrouter.ai → Keys | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct:free` |
-| Groq | console.groq.com → API Keys | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
-| Cerebras | cloud.cerebras.ai → API Keys | `https://api.cerebras.ai/v1` | `llama3.1-8b` |
+| Anbieter | Schlüssel holen | Basis-URL | Beispiel-Modell (gratis) | Hinweis |
+|---|---|---|---|---|
+| OpenRouter | openrouter.ai → Keys | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct:free` | Nur E-Mail nötig; ohne Kauf max. 50 Gratis-Anfragen/Tag |
+| Groq | console.groq.com → API Keys | `https://api.groq.com/openai/v1` | `openai/gpt-oss-120b` | Sehr schnell; ca. 30 Anfragen/Minute, 1.000/Tag |
+| Mistral | console.mistral.ai → Experiment (gratis) | `https://api.mistral.ai/v1` | `mistral-small-latest` | Handynummer nötig, keine Karte; ggfls. Datentraining in Einstellungen deaktivieren |
+| Cloudflare Workers AI | dash.cloudflare.com → Workers AI | `https://api.cloudflare.com/client/v4/accounts/<ID>/ai/v1` | `@cf/meta/llama-3.1-8b-instruct` | Gratis-Kontingent pro Tag, Karte nicht nötig |
+| Cohere | dashboard.cohere.com → API Keys | `https://api.cohere.ai/compatibility/v1` | `command-r7b-12-2024` | Trial-Schlüssel gratis, keine Karte |
+| Hugging Face | huggingface.co → Settings → Access Tokens | `https://router.huggingface.co/v1` | je nach Modell | Nur E-Mail nötig; kleines Gratis-Kontingent |
+| NVIDIA NIM | build.nvidia.com → Modell → API Key | `https://integrate.api.nvidia.com/v1` | `meta/llama-3.1-8b-instruct` | Nur E-Mail nötig; 40 Anfragen/Minute |
+
+Nicht mehr gratis ohne Karte: Cerebras (seit Juli 2026 nur mit Kreditkarte), GitHub Models (eingestellt), Together AI (5 $ Mindestkauf).
 
 ```bash
 set CLOUD_API_KEY=<dein Schluessel>
