@@ -33,6 +33,8 @@ jobs:
       - name: Agentennetzwerk ausführen
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NETZWERK_MIT_SUCHE: ${{ vars.NETZWERK_MIT_SUCHE || '0' }}
+          GEMINI_MODELL: ${{ vars.GEMINI_MODELL || 'gemini-3.8-flash' }}
         run: python scripts/agentennetzwerk.py ${{ github.event.inputs.auftrag }}
 
       - name: Bericht committen

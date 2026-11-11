@@ -12,16 +12,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from shared.rollen import AGENTEN_ROLLEN, BERICHTS_ANWEISUNG, STANDARD_AUFTRAG, AgentenBefund, AgentenRolle  # noqa: E402
 
 MODEL = os.environ.get("GEMINI_MODELL", "gemini-3.8-flash")
+MIT_SUCHE = os.environ.get("NETZWERK_MIT_SUCHE", "0") == "1"
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 
 
+def _tools() -> list | None:
+    if not MIT_SUCHE:
+        return None
+    return [types.Tool(google_search=types.GoogleSearch())]
+
+
 async def agent_recherche(client: genai.Client, rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
+    system = rolle.auftrag
+    if not MIT_SUCHE:
+        system = (
+            "Hinweis: Du hast keinen Internetzugang. Arbeite mit deinem eigenen Wissen und "
+            "kennzeichne veraltete oder unsichere Angaben als offen. "
+            + system
+        )
     antwort = await client.aio.models.generate_content(
         model=MODEL,
         contents=auftrag,
         config=types.GenerateContentConfig(
-            system_instruction=rolle.auftrag,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
+            system_instruction=system,
+            tools=_tools(),
         ),
     )
     befund = (antwort.text or "").strip()

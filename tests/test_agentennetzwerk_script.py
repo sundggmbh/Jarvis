@@ -44,14 +44,26 @@ class FakeClient:
         self.aio = FakeAio(self.model)
 
 
-async def test_agent_recherche_liefert_befund_mit_websuche():
+async def test_agent_recherche_kostenlos_ohne_websuche(monkeypatch):
+    monkeypatch.setattr(script, "MIT_SUCHE", False)
     client = FakeClient("Recherche-Ergebnis")
     befund = await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
     assert befund.agent == "marktchancen-agent"
     assert befund.befund == "Recherche-Ergebnis"
     config = client.model.calls[0]["config"]
-    assert config.system_instruction == AGENTEN_ROLLEN[0].auftrag
+    assert config.tools is None
+    assert "keinen Internetzugang" in config.system_instruction
+    assert AGENTEN_ROLLEN[0].auftrag in config.system_instruction
+
+
+async def test_agent_recherche_mit_websuche(monkeypatch):
+    monkeypatch.setattr(script, "MIT_SUCHE", True)
+    client = FakeClient("Recherche-Ergebnis")
+    await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
+    config = client.model.calls[0]["config"]
+    assert config.tools is not None
     assert any(tool.google_search is not None for tool in config.tools)
+    assert config.system_instruction == AGENTEN_ROLLEN[0].auftrag
 
 
 async def test_alle_agenten_werden_parallel_gestartet():

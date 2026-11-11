@@ -4,6 +4,8 @@ Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **par
 
 **Betrieb über GitHub Actions – für öffentliche Repos komplett kostenlos** (Google Gemini Free Tier, täglicher Lauf, Berichte landen als Markdown im Repo).
 
+> **Hinweis zur Websuche:** Im kostenlosen Gemini-Tarif ist die Live-Websuche (Grounding) nicht enthalten. Standardmäßig arbeiten die Agenten daher mit ihrem eigenen Wissen und kennzeichnen Unsicherheiten. Wer die Live-Websuche zuschalten will, richtet in Google eine Zahlungsmethode ein und setzt die Variable `NETZWERK_MIT_SUCHE=1` (Repository → Settings → Secrets and variables → Actions → **Variables**).
+
 ## Agenten im Netzwerk
 
 | Agent | Aufgabe |
