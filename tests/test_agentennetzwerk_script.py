@@ -4,8 +4,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from google.genai import types
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -15,81 +13,90 @@ spec = importlib.util.spec_from_file_location(
 script = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(script)
 
-from shared.rollen import AGENTEN_ROLLEN, STANDARD_AUFTRAG, AgentenBefund  # noqa: E402
+from shared.rollen import AGENTEN_ROLLEN, GESCHAEFTS_AGENTEN, STANDARD_AUFTRAG, AgentenBefund  # noqa: E402
 
 
-class FakeAntwort:
-    def __init__(self, text: str):
-        self.text = text
+def _rolle(name: str = "test-agent") -> script.AgentenRolle:
+    return script.AgentenRolle(name=name, beschreibung="Test", auftrag="Testanweisung")
 
 
-class FakeModel:
-    def __init__(self, text: str):
-        self._text = text
-        self.calls: list[dict] = []
+async def test_frage_agent_nutzt_gemini_backend(monkeypatch):
+    monkeypatch.setattr(script, "BACKEND", "gemini")
+    aufgerufen = {}
 
-    async def generate_content(self, **kwargs):
-        self.calls.append(kwargs)
-        return FakeAntwort(self._text)
+    async def fake_gemini(system, nutzer):
+        aufgerufen["system"] = system
+        return "Gemini-Antwort"
 
-
-class FakeAio:
-    def __init__(self, model: FakeModel):
-        self.models = model
+    monkeypatch.setattr(script, "_gemini_chat", fake_gemini)
+    assert await script.frage_agent(_rolle(), "Frage") == "Gemini-Antwort"
+    assert "keinen Internetzugang" in aufgerufen["system"]
 
 
-class FakeClient:
-    def __init__(self, text: str):
-        self.model = FakeModel(text)
-        self.aio = FakeAio(self.model)
+async def test_frage_agent_nutzt_ollama_backend(monkeypatch):
+    monkeypatch.setattr(script, "BACKEND", "ollama")
+    aufgerufen = {}
+
+    async def fake_ollama(system, nutzer):
+        aufgerufen["system"] = system
+        return "Lokale Antwort"
+
+    monkeypatch.setattr(script, "_ollama_chat", fake_ollama)
+    assert await script.frage_agent(_rolle(), "Frage") == "Lokale Antwort"
+    assert "lokal ohne Internetzugang" in aufgerufen["system"]
+    assert aufgerufen["system"].endswith("Testanweisung")
 
 
-async def test_agent_recherche_kostenlos_ohne_websuche(monkeypatch):
+def test_tools_nur_bei_gemini_mit_suche(monkeypatch):
+    monkeypatch.setattr(script, "BACKEND", "gemini")
     monkeypatch.setattr(script, "MIT_SUCHE", False)
-    client = FakeClient("Recherche-Ergebnis")
-    befund = await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
-    assert befund.agent == "marktchancen-agent"
-    assert befund.befund == "Recherche-Ergebnis"
-    config = client.model.calls[0]["config"]
-    assert config.tools is None
-    assert "keinen Internetzugang" in config.system_instruction
-    assert AGENTEN_ROLLEN[0].auftrag in config.system_instruction
+    assert script._tools() is None
 
-
-async def test_agent_recherche_mit_websuche(monkeypatch):
     monkeypatch.setattr(script, "MIT_SUCHE", True)
-    client = FakeClient("Recherche-Ergebnis")
-    await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
-    config = client.model.calls[0]["config"]
-    assert config.tools is not None
-    assert any(tool.google_search is not None for tool in config.tools)
-    assert config.system_instruction == AGENTEN_ROLLEN[0].auftrag
+    assert script._tools() is not None
+
+    monkeypatch.setattr(script, "BACKEND", "ollama")
+    assert script._tools() is None
 
 
-async def test_alle_agenten_werden_parallel_gestartet():
-    client = FakeClient("Befund")
-    befunde = list(
-        await asyncio.gather(*(script.agent_recherche(client, rolle, "Auftrag") for rolle in AGENTEN_ROLLEN))
-    )
-    assert len(befunde) == len(AGENTEN_ROLLEN)
-    assert client.model.calls and len(client.model.calls) == len(AGENTEN_ROLLEN)
+async def test_agent_recherche_ohne_text_fehler(monkeypatch):
+    async def fake_leer(rolle, nutzer):
+        return "  "
 
-
-async def test_bericht_konsolidieren_ohne_websuche():
-    client = FakeClient("## Zusammenfassung\nInhalt")
-    bericht = await script.bericht_konsolidieren(client, "Auftrag", [AgentenBefund(agent="a", befund="b")])
-    assert bericht.startswith("## Zusammenfassung")
-    config = client.model.calls[0]["config"]
-    assert not config.tools
-
-
-async def test_agent_recherche_ohne_text_fehler():
-    client = FakeClient("  ")
+    monkeypatch.setattr(script, "frage_agent", fake_leer)
     try:
-        await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
+        await script.agent_recherche(None, _rolle(), "Auftrag")
         raise AssertionError("RuntimeError erwartet")
     except RuntimeError:
         pass
+
+
+async def test_arbeitsproben_landen_im_freigabe_ordner(monkeypatch, tmp_path):
+    monkeypatch.setattr(script, "AUSGABEN_DIR", tmp_path / "ausgaben")
+
+    async def fake_probe(rolle, nutzer):
+        return f"Probe von {rolle.name}"
+
+    monkeypatch.setattr(script, "frage_agent", fake_probe)
+    zeitstempel = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc)
+    proben = await script.produziere_arbeitsproben(zeitstempel)
+
+    assert len(proben) == len(GESCHAEFTS_AGENTEN)
+    for name, pfad in proben:
+        assert pfad.exists()
+        assert f"Probe von {name}" in pfad.read_text(encoding="utf-8")
+
+
+async def test_alle_geschaefts_agenten_laufen_parallel(monkeypatch):
+    monkeypatch.setattr(script, "AUSGABEN_DIR", REPO_ROOT / "ausgaben-test-tmp")
+
+    async def fake_probe(rolle, nutzer):
+        await asyncio.sleep(0)
+        return "x"
+
+    monkeypatch.setattr(script, "frage_agent", fake_probe)
+    proben = await script.produziere_arbeitsproben(datetime(2026, 11, 11, tzinfo=timezone.utc))
+    assert {name for name, _ in proben} == {rolle.name for rolle in GESCHAEFTS_AGENTEN}
 
 
 def test_report_text_enthaelt_alle_teile():
@@ -100,3 +107,10 @@ def test_report_text_enthaelt_alle_teile():
     assert "test-agent" in text
     assert "Ein Befund" in text
     assert "## Zusammenfassung" in text
+
+
+def test_agenten_rollen_sind_vollstaendig():
+    assert len(AGENTEN_ROLLEN) == 4
+    assert len(GESCHAEFTS_AGENTEN) == 5
+    alle = [r.name for r in AGENTEN_ROLLEN + GESCHAEFTS_AGENTEN]
+    assert len(alle) == len(set(alle))

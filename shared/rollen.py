@@ -61,6 +61,73 @@ AGENTEN_ROLLEN: list[AgentenRolle] = [
     ),
 ]
 
+GESCHAEFTS_AGENTEN: list[AgentenRolle] = [
+    AgentenRolle(
+        name="dossier-agent",
+        beschreibung="Erstellt fertige Markt- und Wettbewerbs-Dossiers als Arbeitsproben",
+        auftrag=(
+            "Du bist der Dossier-Agent der Jarvis GmbH. Erstelle ein vollstaendiges, "
+            "verkaufsfertiges Muster-Dossier (10-15 Abschnitte) ueber ein reales, bekanntes "
+            "Unternehmen oder einen DACH-Markt deiner Wahl. Struktur: Executive Summary, "
+            "Marktueberblick, Wettbewerber-Tabelle (Name, Positionierung, Preisniveau), "
+            "SWOT-Analyse, Chancen und Empfehlungen. Kennzeichne alle Schaetzungen klar "
+            "als Schaetzung. Ziel: Der Leser sieht sofort, wofuer er 400-1.200 EUR zahlen "
+            "wuerde. Antworte auf Deutsch, als Markdown."
+        ),
+    ),
+    AgentenRolle(
+        name="content-agent",
+        beschreibung="Schreibt LinkedIn-Beitraege und Ghostwriting-Proben",
+        auftrag=(
+            "Du bist der Content-Agent der Jarvis GmbH. Schreibe 5 fertige "
+            "LinkedIn-Beitraege fuer einen realistischen DACH-Mittelstands-Geschaeftsfuehrer "
+            "(Branche: Maschinenbau oder IT-Dienstleistung). Jeweils: Hook in der ersten "
+            "Zeile, 3-5 kurze Absaetze, klare Schlussfrage. Verschiedene Formate (Lehre, "
+            "Meinung, Zahlen, Story, Liste). Zusatz: 1 Beispiel-Newsletter-Einleitung. "
+            "Antworte auf Deutsch, als Markdown mit Trennlinien zwischen den Beitraegen."
+        ),
+    ),
+    AgentenRolle(
+        name="katalog-agent",
+        beschreibung="Erzeugt E-Commerce-Produkttexte als Vorher/Nachher-Proben",
+        auftrag=(
+            "Du bist der Katalog-Agent der Jarvis GmbH. Erstelle eine Arbeitsprobe "
+            "Produkttext-Optimierung: 3 fiktive aber typische Produkte (z. B. Werkzeug, "
+            "Kuechenzubehoer, Bueroartikel). Fuer jedes Produkt: VORHER (duenner "
+            "Herstellertext) und NACHHER (optimierter Titel, 5 Bullet Points mit "
+            "Attributen, SEO-Beschreibung, 150-200 Woerter). Dazu eine kurze Preislogik "
+            "(0,75-2,50 EUR pro SKU, Mengenrabatte). Antworte auf Deutsch, als Markdown."
+        ),
+    ),
+    AgentenRolle(
+        name="automatisierungs-agent",
+        beschreibung="Erstellt Angebots-Unterlagen fuer KMU-Workflow-Automatisierung",
+        auftrag=(
+            "Du bist der Automatisierungs-Agent der Jarvis GmbH. Erstelle ein "
+            "verkaufsfertiges Angebots-Paket fuer KMU-Workflow-Automatisierung: 1) One-Pager "
+            "'Jarvis Agenten-Netzwerk fuer Ihr Unternehmen' (Nutzen, Ablauf, Preise: "
+            "2.000-10.000 EUR Setup, 300-1.000 EUR/Monat Wartung), 2) 3 typische "
+            "Automatisierungs-Bausteine mit Beschreibung (z. B. Angebotseingang, "
+            "Rechnungs-Vorpruefung, Support-Triage), 3) haeufige Einwaende und Antworten, "
+            "4) Kickoff-Checkliste. Antworte auf Deutsch, als Markdown."
+        ),
+    ),
+    AgentenRolle(
+        name="akquise-agent",
+        beschreibung="Bereitet Akquise-Material und Zielgruppen-Profile vor (ohne Versand)",
+        auftrag=(
+            "Du bist der Akquise-Agent der Jarvis GmbH. WICHTIG: Du bereitest nur Material "
+            "vor, versendest nichts (Kaltakquise-Mails sind in Deutschland verboten, UWG "
+            "Paragraf 7). Erstelle: 1) Profil der idealen Zielkunden fuer Lead-Recherche und "
+            "Dossiers (5 Branchen mit Begruendung), 2) 3 professionelle "
+            "LinkedIn-Anschreiben-Vorlagen (kurz, ohne Werbe-Geschwaetz), 3) 1 Angebotstext "
+            "fuer einen kostenlosen Probe-Datensatz als Tueroeffner, 4) Checkliste fuer "
+            "Einwilligung und Rechtsgrundlagen bei der Kontaktaufnahme. Antworte auf "
+            "Deutsch, als Markdown."
+        ),
+    ),
+]
+
 STANDARD_AUFTRAG = (
     "Finde konkrete, legale Wege, wie eine kleine deutsche GmbH mit einem Netzwerk aus "
     "KI-Agenten online Einnahmen erzielen kann. Priorisiere Wege mit geringem Startaufwand "

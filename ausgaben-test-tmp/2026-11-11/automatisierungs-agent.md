@@ -1,0 +1,3 @@
+# Arbeitsprobe: automatisierungs-agent
+
+x
