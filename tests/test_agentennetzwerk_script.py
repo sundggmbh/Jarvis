@@ -300,7 +300,7 @@ async def test_arbeitsproben_landen_im_freigabe_ordner(script, monkeypatch, tmp_
 
     monkeypatch.setattr(script, "_gemini_chat", fake)
     ergebnis = await script.produziere_arbeitsproben(__import__("datetime").datetime(2026, 11, 12))
-    assert len(ergebnis) == 6
+    assert len(ergebnis) == 10
     for name, pfad in ergebnis:
         assert pfad.parent.name == "2026-11-12"
         assert pfad.read_text(encoding="utf-8").startswith(f"# Arbeitsprobe: {name}")
@@ -330,20 +330,25 @@ def test_report_text_enthaelt_backends_und_teile(script, monkeypatch):
 def test_agenten_rollen_sind_vollstaendig(script):
     from shared.rollen import AGENTEN_ROLLEN, GESCHAEFTS_AGENTEN
 
-    assert len(AGENTEN_ROLLEN) == 4
-    assert len(GESCHAEFTS_AGENTEN) == 6
+    assert len(AGENTEN_ROLLEN) == 5
+    assert len(GESCHAEFTS_AGENTEN) == 10
     namen = {rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGENTEN}
     assert {
         "marktchancen-agent",
         "verdienstmodelle-agent",
         "wettbewerber-agent",
         "risiko-agent",
+        "qualitaets-agent",
         "dossier-agent",
         "content-agent",
         "katalog-agent",
         "automatisierungs-agent",
         "akquise-agent",
         "architekt-agent",
+        "seo-agent",
+        "social-agent",
+        "produkt-agent",
+        "ausschreibungs-agent",
     } <= namen
 
 

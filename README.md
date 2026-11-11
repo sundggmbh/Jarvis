@@ -16,6 +16,7 @@ Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **par
 | `verdienstmodelle-agent` | Konkrete Möglichkeiten, online Geld zu verdienen |
 | `wettbewerber-agent` | Wettbewerb, Preise und Angebotslücken |
 | `risiko-agent` | Rechtliche und wirtschaftliche Risiken (DSGVO, AI Act) |
+| `qualitaets-agent` | Bewertet täglich: welcher Agent liefert Wert, welcher nicht (Ampel-Tabelle) |
 
 **Geschäfts-Agenten** (fertige Arbeitsproben, Ergebnisse in `ausgaben/` zur Freigabe):
 
@@ -27,6 +28,10 @@ Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **par
 | `automatisierungs-agent` | Komplettes Angebots-Paket für KMU (2.000–10.000 € Setup) |
 | `akquise-agent` | Zielgruppen-Profile und Anschreiben-Vorlagen (nur Vorbereitung, kein Versand) |
 | `architekt-agent` | Baut das Netzwerk weiter aus: neue Rollen, Zusammenarbeit, Problemlösungen |
+| `seo-agent` | SEO-Artikel + Keyword-Analyse als Verkaufsprobe (Text-Dienstleistung) |
+| `social-agent` | Wochen-Content-Paket für LinkedIn/X als Verkaufsprobe (Abo-Produkt) |
+| `produkt-agent` | E-Book- und Kurs-Material als Verkaufsprobe (digitale Produkte) |
+| `ausschreibungs-agent` | Öffentliche Ausschreibungen + Angebots-Skizzen (nur Vorbereitung) |
 
 ### Neuen Agenten rekrutieren
 
