@@ -33,6 +33,7 @@ AUSGABEN_DIR = REPO_ROOT / "ausgaben"
 _drossel = asyncio.Semaphore(MAX_PARALLEL)
 _ersatz_backend = {"gemini": "ollama", "ollama": "gemini"}
 _verwendete_backends: dict[str, str] = {}
+_backend_status: dict[str, bool | None] = {"ollama": None}
 
 _bekannte_namen = sorted(rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGENTEN)
 
@@ -102,22 +103,45 @@ async def _chat_mit(backend: str, rolle: AgentenRolle, nutzer: str) -> str:
     return await _gemini_chat(system, nutzer)
 
 
+async def _backend_verfuegbar(backend: str) -> bool:
+    if backend == "gemini":
+        return True
+    if _backend_status["ollama"] is not None:
+        return _backend_status["ollama"]
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            antwort = await client.get(f"{OLLAMA_URL}/api/tags")
+        _backend_status["ollama"] = antwort.status_code == 200
+    except Exception:
+        _backend_status["ollama"] = False
+    return _backend_status["ollama"]
+
+
 async def frage_agent(rolle: AgentenRolle, nutzer: str) -> str:
     primar = _primares_backend(rolle)
     ersatz = _ersatz_backend.get(primar)
-    try:
-        async with _drossel:
-            text = await _chat_mit(primar, rolle, nutzer)
-        _verwendete_backends[rolle.name] = primar
-        return text
-    except Exception as fehler:
-        if ersatz is None:
-            raise
-        print(f"  {rolle.name}: {primar} fehlgeschlagen ({type(fehler).__name__}), weiche auf {ersatz} ...")
-        async with _drossel:
-            text = await _chat_mit(ersatz, rolle, nutzer)
-        _verwendete_backends[rolle.name] = ersatz
-        return text
+    plan: list[tuple[str, int]] = [(primar, 3)]
+    if ersatz and await _backend_verfuegbar(ersatz):
+        plan.append((ersatz, 1))
+
+    letzter_fehler: Exception | None = None
+    for backend, max_versuche in plan:
+        for versuch in range(max_versuche):
+            try:
+                async with _drossel:
+                    text = await _chat_mit(backend, rolle, nutzer)
+                _verwendete_backends[rolle.name] = backend
+                return text
+            except Exception as fehler:
+                letzter_fehler = fehler
+                if versuch + 1 < max_versuche:
+                    print(
+                        f"  {rolle.name}: {backend} fehlgeschlagen ({type(fehler).__name__}), "
+                        f"wiederhole in {5 * (versuch + 1)}s ..."
+                    )
+                    await asyncio.sleep(5 * (versuch + 1))
+    assert letzter_fehler is not None
+    raise letzter_fehler
 
 
 async def agent_recherche(rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
@@ -140,7 +164,13 @@ async def bericht_konsolidieren(auftrag: str, befunde: list[AgentenBefund]) -> s
     return bericht
 
 
-def report_text(auftrag: str, zeitstempel: datetime, bericht: str, befunde: list[AgentenBefund]) -> str:
+def report_text(
+    auftrag: str,
+    zeitstempel: datetime,
+    bericht: str,
+    befunde: list[AgentenBefund],
+    fehler: list[tuple[str, str]] | None = None,
+) -> str:
     backends = ", ".join(f"{agent}: {backend}" for agent, backend in sorted(_verwendete_backends.items()))
     kopf = (
         f"# Jarvis Netzwerk-Bericht ({zeitstempel.strftime('%Y-%m-%d %H:%M UTC')})\n\n"
@@ -148,8 +178,11 @@ def report_text(auftrag: str, zeitstempel: datetime, bericht: str, befunde: list
         f"**Genutzte Backends:** {backends or 'unbekannt'}\n\n"
         f"**Auftrag:** {auftrag}\n\n"
         f"**Agenten:** {', '.join(befund.agent for befund in befunde)}\n\n"
-        f"## Einzelbefunde\n\n"
     )
+    if fehler:
+        fehlertext = ", ".join(f"{name} ({art})" for name, art in fehler)
+        kopf += f"**Fehlgeschlagene Agenten:** {fehlertext}\n\n"
+    kopf += "## Einzelbefunde\n\n"
     befunde_markdown = "\n\n".join(f"### {befund.agent}\n\n{befund.befund}" for befund in befunde)
     return f"{kopf}{befunde_markdown}\n\n---\n\n{bericht}\n"
 
@@ -166,7 +199,16 @@ async def produziere_arbeitsproben(zeitstempel: datetime) -> list[tuple[str, Pat
         pfad.write_text(f"# Arbeitsprobe: {rolle.name}\n\n{text}\n", encoding="utf-8")
         return rolle.name, pfad
 
-    return list(await asyncio.gather(*(eine(rolle) for rolle in GESCHAEFTS_AGENTEN)))
+    ergebnisse = await asyncio.gather(
+        *(eine(rolle) for rolle in GESCHAEFTS_AGENTEN), return_exceptions=True
+    )
+    proben: list[tuple[str, Path]] = []
+    for rolle, ergebnis in zip(GESCHAEFTS_AGENTEN, ergebnisse):
+        if isinstance(ergebnis, BaseException):
+            print(f"  WARNUNG Arbeitsprobe {rolle.name} fehlgeschlagen: {type(ergebnis).__name__}")
+            continue
+        proben.append(ergebnis)
+    return proben
 
 
 async def main() -> None:
@@ -185,16 +227,32 @@ async def main() -> None:
         print(f"  Arbeitsprobe {name}: {pfad}")
 
     print(f"Starte {len(AGENTEN_ROLLEN)} Recherche-Agenten parallel ...")
-    befunde = list(await asyncio.gather(*(agent_recherche(rolle, auftrag) for rolle in AGENTEN_ROLLEN)))
-    for befund in befunde:
-        print(f"  OK {befund.agent}: {len(befund.befund)} Zeichen")
+    ergebnisse = await asyncio.gather(
+        *(agent_recherche(rolle, auftrag) for rolle in AGENTEN_ROLLEN), return_exceptions=True
+    )
+    befunde: list[AgentenBefund] = []
+    fehler: list[tuple[str, str]] = []
+    for rolle, ergebnis in zip(AGENTEN_ROLLEN, ergebnisse):
+        if isinstance(ergebnis, BaseException):
+            fehler.append((rolle.name, type(ergebnis).__name__))
+            print(f"  FEHLER {rolle.name}: {type(ergebnis).__name__}")
+        else:
+            befunde.append(ergebnis)
+            print(f"  OK {ergebnis.agent}: {len(ergebnis.befund)} Zeichen")
+
+    if not befunde:
+        raise SystemExit("Alle Recherche-Agenten sind fehlgeschlagen - kein Bericht erstellt.")
 
     print("Konsolidiere Bericht ...")
-    bericht = await bericht_konsolidieren(auftrag, befunde)
+    try:
+        bericht = await bericht_konsolidieren(auftrag, befunde)
+    except Exception as fehler_konsolidierung:
+        print(f"  WARNUNG Konsolidierung fehlgeschlagen: {type(fehler_konsolidierung).__name__} - nutze Einzelbefunde.")
+        bericht = "Der Berichts-Agent ist ausgefallen; unten stehen die unverkuerzten Einzelbefunde."
 
     pfad = REPORTS_DIR / f"{zeitstempel.strftime('%Y-%m-%d')}-netzwerk-bericht.md"
     pfad.parent.mkdir(parents=True, exist_ok=True)
-    pfad.write_text(report_text(auftrag, zeitstempel, bericht, befunde), encoding="utf-8")
+    pfad.write_text(report_text(auftrag, zeitstempel, bericht, befunde, fehler), encoding="utf-8")
     print(f"Bericht gespeichert: {pfad}")
 
     print("Backend-Verteilung:", ", ".join(f"{a}={b}" for a, b in sorted(_verwendete_backends.items())))

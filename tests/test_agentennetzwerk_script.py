@@ -29,6 +29,7 @@ def script(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     modul = _lade_script()
     modul._verwendete_backends.clear()
+    modul._backend_status["ollama"] = None
     return modul
 
 
@@ -46,6 +47,7 @@ async def test_ollama_backend_wird_genutzt(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "ollama")
     modul = _lade_script()
     modul._verwendete_backends.clear()
+    modul._backend_status["ollama"] = None
 
     async def fake(system, nutzer):
         return "Ollama-Antwort"
@@ -60,6 +62,7 @@ async def test_hybrid_teilt_agenten_auf_beide_backends(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "hybrid")
     modul = _lade_script()
     modul._verwendete_backends.clear()
+    modul._backend_status["ollama"] = True
 
     gemini_namen = []
     ollama_namen = []
@@ -85,6 +88,8 @@ async def test_hybrid_teilt_agenten_auf_beide_backends(script, monkeypatch):
 
 
 async def test_fallback_gemini_zu_ollama(script, monkeypatch):
+    script._backend_status["ollama"] = True
+
     async def kaputt(system, nutzer):
         raise RuntimeError("Gemini nicht erreichbar")
 
@@ -102,6 +107,7 @@ async def test_fallback_ollama_zu_gemini(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "ollama")
     modul = _lade_script()
     modul._verwendete_backends.clear()
+    modul._backend_status["ollama"] = None
 
     async def kaputt(system, nutzer):
         raise RuntimeError("Ollama laeuft nicht")
@@ -117,6 +123,8 @@ async def test_fallback_ollama_zu_gemini(script, monkeypatch):
 
 
 async def test_beide_backends_fehlgeschlagen(script, monkeypatch):
+    script._backend_status["ollama"] = True
+
     async def kaputt(system, nutzer):
         raise RuntimeError("Ausfall")
 
@@ -124,6 +132,49 @@ async def test_beide_backends_fehlgeschlagen(script, monkeypatch):
     monkeypatch.setattr(script, "_ollama_chat", kaputt)
     with pytest.raises(RuntimeError):
         await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
+
+
+async def test_fallback_wird_uebersprungen_wenn_ollama_fehlt(script, monkeypatch):
+    script._backend_status["ollama"] = False
+    aufrufe = []
+
+    async def kaputt(system, nutzer):
+        aufrufe.append("gemini")
+        raise RuntimeError("Gemini nicht erreichbar")
+
+    async def nie_gerufen(system, nutzer):
+        aufrufe.append("ollama")
+        return "sollte nicht passieren"
+
+    monkeypatch.setattr(script, "_gemini_chat", kaputt)
+    monkeypatch.setattr(script, "_ollama_chat", nie_gerufen)
+    with pytest.raises(RuntimeError):
+        await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
+    assert aufrufe == ["gemini", "gemini", "gemini"]
+
+
+async def test_backend_verfuegbar_erkennung(script, monkeypatch):
+    class FakeAntwort:
+        status_code = 200
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            assert url.endswith("/api/tags")
+            return FakeAntwort()
+
+    monkeypatch.setattr(script.httpx, "AsyncClient", FakeClient)
+    assert await script._backend_verfuegbar("ollama") is True
+    assert script._backend_status["ollama"] is True
+    assert await script._backend_verfuegbar("gemini") is True
 
 
 def test_tools_nur_bei_gemini_mit_suche(script, monkeypatch):
