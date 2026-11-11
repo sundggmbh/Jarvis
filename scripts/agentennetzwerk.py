@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from shared.rollen import AGENTEN_ROLLEN, BERICHTS_ANWEISUNG, STANDARD_AUFTRAG, AgentenBefund, AgentenRolle  # noqa: E402
 
-MODEL = "gemini-2.5-flash"
+MODEL = os.environ.get("GEMINI_MODELL", "gemini-3.8-flash")
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 
 
