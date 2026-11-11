@@ -28,6 +28,9 @@ HERMES_MODELL = os.environ.get("HERMES_MODELL", "hermes3:8b")
 CLOUD_BASE_URL = os.environ.get("CLOUD_BASE_URL", "https://openrouter.ai/api/v1")
 CLOUD_API_KEY = os.environ.get("CLOUD_API_KEY", "")
 CLOUD_MODELL = os.environ.get("CLOUD_MODELL", "meta-llama/llama-3.3-70b-instruct:free")
+CLOUD2_BASE_URL = os.environ.get("CLOUD2_BASE_URL", "https://api.groq.com/openai/v1")
+CLOUD2_API_KEY = os.environ.get("CLOUD2_API_KEY", "")
+CLOUD2_MODELL = os.environ.get("CLOUD2_MODELL", "openai/gpt-oss-120b")
 MAX_PARALLEL = int(os.environ.get("NETZWERK_MAX_PARALLEL", "3"))
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,10 +39,11 @@ AUSGABEN_DIR = REPO_ROOT / "ausgaben"
 
 _drossel = asyncio.Semaphore(MAX_PARALLEL)
 _ersatz_ketten = {
-    "gemini": ["cloud", "ollama", "hermes"],
-    "cloud": ["gemini", "ollama", "hermes"],
-    "ollama": ["hermes", "gemini", "cloud"],
-    "hermes": ["ollama", "gemini", "cloud"],
+    "gemini": ["cloud", "cloud2", "ollama", "hermes"],
+    "cloud": ["cloud2", "gemini", "ollama", "hermes"],
+    "cloud2": ["cloud", "gemini", "ollama", "hermes"],
+    "ollama": ["hermes", "cloud", "cloud2", "gemini"],
+    "hermes": ["ollama", "cloud", "cloud2", "gemini"],
 }
 _verwendete_backends: dict[str, str] = {}
 _backend_status: dict[str, bool | None] = {"ollama": None}
@@ -48,11 +52,11 @@ _bekannte_namen = sorted(rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGE
 
 
 def _primares_backend(rolle: AgentenRolle) -> str:
-    if BACKEND in ("gemini", "ollama", "hermes", "cloud"):
+    if BACKEND in ("gemini", "ollama", "hermes", "cloud", "cloud2"):
         return BACKEND
     if BACKEND == "hybrid":
         if rolle.name in _bekannte_namen:
-            return ("gemini", "cloud", "ollama", "hermes")[_bekannte_namen.index(rolle.name) % 4]
+            return ("gemini", "cloud", "cloud2", "ollama", "hermes")[_bekannte_namen.index(rolle.name) % 5]
         return "gemini"
     raise ValueError(f"Unbekanntes Backend: {BACKEND}")
 
@@ -64,7 +68,7 @@ def _system_anweisung(rolle: AgentenRolle, backend: str) -> str:
             "Hinweis: Du hast keinen Internetzugang. Arbeite mit deinem eigenen Wissen und "
             "kennzeichne veraltete oder unsichere Angaben als offen. " + system
         )
-    if backend in ("ollama", "hermes", "cloud"):
+    if backend in ("ollama", "hermes", "cloud", "cloud2"):
         system = (
             "Hinweis: Du hast keinen Internetzugang. Nutze dein eigenes Wissen "
             "und kennzeichne unsichere Angaben als offen. " + system
@@ -99,13 +103,13 @@ async def _hermes_chat(system: str, nutzer: str) -> str:
     return await _ollama_chat(system, nutzer, modell=HERMES_MODELL)
 
 
-async def _cloud_chat(system: str, nutzer: str) -> str:
+async def _openai_kompatibel_chat(base_url: str, api_key: str, modell: str, system: str, nutzer: str) -> str:
     async with httpx.AsyncClient(timeout=600) as client:
         antwort = await client.post(
-            f"{CLOUD_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {CLOUD_API_KEY}"},
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": CLOUD_MODELL,
+                "model": modell,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": nutzer},
@@ -114,6 +118,14 @@ async def _cloud_chat(system: str, nutzer: str) -> str:
         )
         antwort.raise_for_status()
         return antwort.json()["choices"][0]["message"]["content"].strip()
+
+
+async def _cloud_chat(system: str, nutzer: str) -> str:
+    return await _openai_kompatibel_chat(CLOUD_BASE_URL, CLOUD_API_KEY, CLOUD_MODELL, system, nutzer)
+
+
+async def _cloud2_chat(system: str, nutzer: str) -> str:
+    return await _openai_kompatibel_chat(CLOUD2_BASE_URL, CLOUD2_API_KEY, CLOUD2_MODELL, system, nutzer)
 
 
 async def _gemini_chat(system: str, nutzer: str) -> str:
@@ -134,6 +146,8 @@ async def _chat_mit(backend: str, rolle: AgentenRolle, nutzer: str) -> str:
         return await _hermes_chat(system, nutzer)
     if backend == "cloud":
         return await _cloud_chat(system, nutzer)
+    if backend == "cloud2":
+        return await _cloud2_chat(system, nutzer)
     return await _gemini_chat(system, nutzer)
 
 
@@ -142,6 +156,8 @@ async def _backend_verfuegbar(backend: str) -> bool:
         return True
     if backend == "cloud":
         return bool(CLOUD_API_KEY)
+    if backend == "cloud2":
+        return bool(CLOUD2_API_KEY)
     if _backend_status["ollama"] is not None:
         return _backend_status["ollama"]
     try:
@@ -267,8 +283,8 @@ async def main() -> None:
         if BACKEND == "gemini":
             raise SystemExit("GEMINI_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama nutzen).")
         print("Hinweis: Kein GEMINI_API_KEY gesetzt - im Hybrid-Modus uebernehmen die anderen Backends.")
-    if BACKEND == "cloud" and not CLOUD_API_KEY:
-        raise SystemExit("CLOUD_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama/hermes nutzen).")
+    if BACKEND in ("cloud", "cloud2") and not (CLOUD_API_KEY if BACKEND == "cloud" else CLOUD2_API_KEY):
+        raise SystemExit(f"API-Schluessel fuer {BACKEND} ist nicht gesetzt (oder NETZWERK_BACKEND=ollama/hermes nutzen).")
 
     auftrag = " ".join(sys.argv[1:]) or STANDARD_AUFTRAG
     zeitstempel = datetime.now(timezone.utc)

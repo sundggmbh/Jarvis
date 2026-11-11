@@ -66,6 +66,7 @@ async def test_ollama_backend_wird_genutzt(script, monkeypatch):
 async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "hybrid")
     monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
+    monkeypatch.setattr(script, "CLOUD2_API_KEY", "test-key2")
     modul = _lade_script()
     modul._verwendete_backends.clear()
     modul._backend_status["ollama"] = True
@@ -82,16 +83,20 @@ async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     async def fake_cloud(system, nutzer):
         return "c"
 
+    async def fake_cloud2(system, nutzer):
+        return "c2"
+
     monkeypatch.setattr(modul, "_gemini_chat", fake_gemini)
     monkeypatch.setattr(modul, "_ollama_chat", fake_ollama)
     monkeypatch.setattr(modul, "_hermes_chat", fake_hermes)
     monkeypatch.setattr(modul, "_cloud_chat", fake_cloud)
+    monkeypatch.setattr(modul, "_cloud2_chat", fake_cloud2)
 
     for name in modul._bekannte_namen:
         await modul.frage_agent(_rolle(name), "hallo")
 
     verteilung = set(modul._verwendete_backends.values())
-    assert verteilung == {"gemini", "ollama", "hermes", "cloud"}
+    assert verteilung == {"gemini", "ollama", "hermes", "cloud", "cloud2"}
     assert len(modul._verwendete_backends) == len(modul._bekannte_namen)
 
 
@@ -122,6 +127,20 @@ async def test_cloud_backend_wird_genutzt(script, monkeypatch):
     text = await modul.frage_agent(_rolle("risiko-agent"), "hallo")
     assert text == "Cloud-Antwort"
     assert modul._verwendete_backends["risiko-agent"] == "cloud"
+
+
+async def test_cloud2_backend_wird_genutzt(script, monkeypatch):
+    monkeypatch.setenv("NETZWERK_BACKEND", "cloud2")
+    modul = _lade_script()
+    modul._verwendete_backends.clear()
+
+    async def fake(system, nutzer):
+        return "Cloud2-Antwort"
+
+    monkeypatch.setattr(modul, "_cloud2_chat", fake)
+    text = await modul.frage_agent(_rolle("risiko-agent"), "hallo")
+    assert text == "Cloud2-Antwort"
+    assert modul._verwendete_backends["risiko-agent"] == "cloud2"
 
 
 async def test_fallback_gemini_zu_cloud_ohne_ollama(script, monkeypatch):
@@ -262,6 +281,11 @@ async def test_backend_verfuegbar_erkennung(script, monkeypatch):
     assert await script._backend_verfuegbar("cloud") is False
     monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
     assert await script._backend_verfuegbar("cloud") is True
+
+    monkeypatch.setattr(script, "CLOUD2_API_KEY", "")
+    assert await script._backend_verfuegbar("cloud2") is False
+    monkeypatch.setattr(script, "CLOUD2_API_KEY", "test-key2")
+    assert await script._backend_verfuegbar("cloud2") is True
 
 
 def test_tools_nur_bei_gemini_mit_suche(script, monkeypatch):
