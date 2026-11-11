@@ -1,10 +1,10 @@
+import asyncio
 import importlib.util
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock
 
-from mistralai.client.models import ConversationResponse, ConversationUsageInfo, MessageOutputEntry, TextChunk
+from google.genai import types
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -18,39 +18,66 @@ spec.loader.exec_module(script)
 from shared.rollen import AGENTEN_ROLLEN, STANDARD_AUFTRAG, AgentenBefund  # noqa: E402
 
 
-def _antwort(text: str) -> ConversationResponse:
-    return ConversationResponse(
-        conversation_id="conv_1",
-        outputs=[MessageOutputEntry(content=[TextChunk(text=text)], role="assistant")],
-        usage=ConversationUsageInfo(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-    )
+class FakeAntwort:
+    def __init__(self, text: str):
+        self.text = text
 
 
-async def test_agent_recherche_liefert_befund():
-    client = AsyncMock()
-    client.beta.conversations.start_async = AsyncMock(return_value=_antwort("Recherche-Ergebnis"))
+class FakeModel:
+    def __init__(self, text: str):
+        self._text = text
+        self.calls: list[dict] = []
+
+    async def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeAntwort(self._text)
+
+
+class FakeAio:
+    def __init__(self, model: FakeModel):
+        self.models = model
+
+
+class FakeClient:
+    def __init__(self, text: str):
+        self.model = FakeModel(text)
+        self.aio = FakeAio(self.model)
+
+
+async def test_agent_recherche_liefert_befund_mit_websuche():
+    client = FakeClient("Recherche-Ergebnis")
     befund = await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
     assert befund.agent == "marktchancen-agent"
     assert befund.befund == "Recherche-Ergebnis"
-    _, kwargs = client.beta.conversations.start_async.call_args
-    assert kwargs["tools"] is not None
-    assert kwargs["instructions"] == AGENTEN_ROLLEN[0].auftrag
+    config = client.model.calls[0]["config"]
+    assert config.system_instruction == AGENTEN_ROLLEN[0].auftrag
+    assert any(tool.google_search is not None for tool in config.tools)
 
 
 async def test_alle_agenten_werden_parallel_gestartet():
-    client = AsyncMock()
-    client.beta.conversations.start_async = AsyncMock(return_value=_antwort("Befund"))
-    befunde = await asyncio_gather_alle(client, "Auftrag")
-    assert len(befunde) == len(AGENTEN_ROLLEN)
-    assert client.beta.conversations.start_async.call_count == len(AGENTEN_ROLLEN)
-
-
-async def asyncio_gather_alle(client, auftrag):
-    return list(
-        await __import__("asyncio").gather(
-            *(script.agent_recherche(client, rolle, auftrag) for rolle in AGENTEN_ROLLEN)
-        )
+    client = FakeClient("Befund")
+    befunde = list(
+        await asyncio.gather(*(script.agent_recherche(client, rolle, "Auftrag") for rolle in AGENTEN_ROLLEN))
     )
+    assert len(befunde) == len(AGENTEN_ROLLEN)
+    assert client.model.calls and len(client.model.calls) == len(AGENTEN_ROLLEN)
+
+
+async def test_bericht_konsolidieren_ohne_websuche():
+    client = FakeClient("## Zusammenfassung\nInhalt")
+    bericht = await script.bericht_konsolidieren(client, "Auftrag", [AgentenBefund(agent="a", befund="b")])
+    assert bericht.startswith("## Zusammenfassung")
+    config = client.model.calls[0]["config"]
+    assert not config.tools
+
+
+async def test_agent_recherche_ohne_text_fehler():
+    client = FakeClient("  ")
+    try:
+        await script.agent_recherche(client, AGENTEN_ROLLEN[0], "Auftrag")
+        raise AssertionError("RuntimeError erwartet")
+    except RuntimeError:
+        pass
 
 
 def test_report_text_enthaelt_alle_teile():
@@ -61,8 +88,3 @@ def test_report_text_enthaelt_alle_teile():
     assert "test-agent" in text
     assert "Ein Befund" in text
     assert "## Zusammenfassung" in text
-
-
-def test_text_aus_antwort_ignoriert_leeres():
-    antwort = _antwort("  ")
-    assert script.text_aus_antwort(antwort) == ""

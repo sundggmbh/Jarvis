@@ -1,13 +1,8 @@
 # Jarvis Agentennetzwerk
 
-Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **parallel**, recherchieren im Web und ihre Befunde werden zu einem Bericht mit konkreten Aufträgen konsolidiert.
+Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **parallel**, recherchieren im Web (Google-Suche) und ihre Befunde werden zu einem Bericht mit konkreten Aufträgen konsolidiert.
 
-Zwei Betriebsarten, gleiche Agenten:
-
-| Betrieb | Wie | Kosten |
-|---|---|---|
-| **GitHub Actions** (empfohlen) | Läuft täglich automatisch, Bericht landet als Datei im Repo | GitHub Actions ist für öffentliche Repos kostenlos; Mistral-API-Kosten nach Nutzung |
-| **Mistral Workflow (Studio)** | Durable Orchestrierung als Managed Deployment | Braucht einen Managed-Deployment-Slot (aktuell limitiert) |
+**Betrieb über GitHub Actions – für öffentliche Repos komplett kostenlos** (Google Gemini Free Tier, täglicher Lauf, Berichte landen als Markdown im Repo).
 
 ## Agenten im Netzwerk
 
@@ -30,42 +25,42 @@ AgentenRolle(
 ),
 ```
 
-Der neue Agent läuft automatisch in beiden Betriebsarten parallel mit allen anderen mit.
+Der neue Agent läuft automatisch parallel mit allen anderen mit.
 
 ## Schnellstart: GitHub Actions (kostenlos)
 
-1. In den Repository-Einstellungen unter **Secrets and variables → Actions** ein Secret `MISTRAL_API_KEY` anlegen (API-Key aus [console.mistral.ai](https://console.mistral.ai/)).
-2. Auf der Actions-Seite den Workflow **Agentennetzwerk** per **Run workflow** starten (oder täglich 06:00 UTC automatisch).
-3. Der fertige Bericht erscheint als Markdown-Datei unter `reports/` im Repository.
+1. Kostenlosen Google-API-Key holen: [aistudio.google.com/apikey](https://aistudio.google.com/apikey) → „Create API key" (keine Kreditkarte nötig).
+2. In den Repository-Einstellungen unter **Secrets and variables → Actions** ein Secret `GEMINI_API_KEY` anlegen.
+3. Auf der Actions-Seite den Workflow **Agentennetzwerk** per **Run workflow** starten – oder täglich 06:00 UTC automatisch.
+4. Der fertige Bericht erscheint als Markdown-Datei unter `reports/` im Repository.
 
 ## Lokal ausführen
 
 ```bash
-uv sync
-cp .env.example .env   # MISTRAL_API_KEY setzen
-uv run python scripts/agentennetzwerk.py "Optional eigener Auftrag"
+cp .env.example .env   # GEMINI_API_KEY setzen
+pip install google-genai pydantic
+python scripts/agentennetzwerk.py "Optional eigener Auftrag"
 ```
-
-Der Bericht wird unter `reports/` gespeichert.
-
-## Mistral Workflow (Studio)
-
-Der gleiche Netzwerk-Code läuft zusätzlich als Workflow `agentennetzwerk` (`apps/worker/`) mit dauerhafter Ausführung. Deployen per Managed Deployment mit Dockerfile-Pfad `deploy/docker/Dockerfile.worker`, sobald ein Deployment-Slot verfügbar ist.
 
 ## Struktur
 
 ```
-shared/rollen.py                       # Agenten-Rollen (gemeinsam für beide Betriebsarten)
-scripts/agentennetzwerk.py             # Standalone-Ausführung (lokal / GitHub Actions)
-apps/worker/src/worker/workflows/      # Workflow-Variante (Mistral Studio)
+shared/rollen.py                       # Agenten-Rollen (eine Quelle für alle Betriebsarten)
+scripts/agentennetzwerk.py             # Ausführung (lokal / GitHub Actions, Google Gemini)
 .github/workflows/agentennetzwerk.yml  # Täglicher automatischer Lauf
-deploy/docker/Dockerfile.worker        # Container für Managed Deployment
+reports/                               # Fertige Netzwerk-Berichte
+apps/worker/                           # Mistral-Workflow-Variante (optional, für Studio-Deployment)
+deploy/docker/Dockerfile.worker        # Container für das Mistral Managed Deployment
 tests/                                 # Tests mit gemockten LLM-Antworten
 ```
 
 ## Tests
 
 ```bash
-uv sync --dev
-uv run pytest
+pip install google-genai pydantic pytest pytest-asyncio
+PYTHONPATH=".:apps/worker/src" pytest
 ```
+
+## Mistral-Workflow-Variante (optional)
+
+Der gleiche Netzwerk-Code existiert zusätzlich als Workflow `agentennetzwerk` (`apps/worker/`) für Mistral Studio mit dauerhafter Ausführung. Er wird aktiviert, sobald ein Managed-Deployment-Slot verfügbar ist (Dockerfile-Pfad: `deploy/docker/Dockerfile.worker`).

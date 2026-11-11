@@ -23,17 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
+          python-version: "3.12"
 
       - name: Abhängigkeiten installieren
-        run: uv sync --frozen --no-dev
+        run: pip install google-genai pydantic
 
       - name: Agentennetzwerk ausführen
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-        run: uv run --no-dev python scripts/agentennetzwerk.py ${{ github.event.inputs.auftrag }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/agentennetzwerk.py ${{ github.event.inputs.auftrag }}
 
       - name: Bericht committen
         run: |
