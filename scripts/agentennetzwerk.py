@@ -19,9 +19,9 @@ from shared.rollen import (  # noqa: E402
     AgentenRolle,
 )
 
+BACKEND = os.environ.get("NETZWERK_BACKEND", "gemini")
 MODEL = os.environ.get("GEMINI_MODELL", "gemini-3.8-flash")
 MIT_SUCHE = os.environ.get("NETZWERK_MIT_SUCHE", "0") == "1"
-BACKEND = os.environ.get("NETZWERK_BACKEND", "gemini")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODELL = os.environ.get("OLLAMA_MODELL", "llama3.1:8b")
 MAX_PARALLEL = int(os.environ.get("NETZWERK_MAX_PARALLEL", "3"))
@@ -31,27 +31,41 @@ REPORTS_DIR = REPO_ROOT / "reports"
 AUSGABEN_DIR = REPO_ROOT / "ausgaben"
 
 _drossel = asyncio.Semaphore(MAX_PARALLEL)
+_ersatz_backend = {"gemini": "ollama", "ollama": "gemini"}
+_verwendete_backends: dict[str, str] = {}
+
+_bekannte_namen = sorted(rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGENTEN)
 
 
-def _tools() -> list | None:
-    if BACKEND != "gemini" or not MIT_SUCHE:
-        return None
-    return [types.Tool(google_search=types.GoogleSearch())]
+def _primares_backend(rolle: AgentenRolle) -> str:
+    if BACKEND in ("gemini", "ollama"):
+        return BACKEND
+    if BACKEND == "hybrid":
+        if rolle.name in _bekannte_namen and _bekannte_namen.index(rolle.name) % 2 == 1:
+            return "ollama"
+        return "gemini"
+    raise ValueError(f"Unbekanntes Backend: {BACKEND}")
 
 
-def _system_anweisung(rolle: AgentenRolle) -> str:
+def _system_anweisung(rolle: AgentenRolle, backend: str) -> str:
     system = rolle.auftrag
-    if BACKEND == "gemini" and not MIT_SUCHE:
+    if backend == "gemini" and not MIT_SUCHE:
         system = (
             "Hinweis: Du hast keinen Internetzugang. Arbeite mit deinem eigenen Wissen und "
             "kennzeichne veraltete oder unsichere Angaben als offen. " + system
         )
-    if BACKEND == "ollama":
+    if backend == "ollama":
         system = (
             "Hinweis: Du laeuft lokal ohne Internetzugang. Arbeite mit deinem eigenen Wissen "
             "und kennzeichne unsichere Angaben als offen. " + system
         )
     return system
+
+
+def _tools(backend: str) -> list | None:
+    if backend != "gemini" or not MIT_SUCHE:
+        return None
+    return [types.Tool(google_search=types.GoogleSearch())]
 
 
 async def _ollama_chat(system: str, nutzer: str) -> str:
@@ -76,44 +90,63 @@ async def _gemini_chat(system: str, nutzer: str) -> str:
     antwort = await client.aio.models.generate_content(
         model=MODEL,
         contents=nutzer,
-        config=types.GenerateContentConfig(system_instruction=system, tools=_tools()),
+        config=types.GenerateContentConfig(system_instruction=system, tools=_tools("gemini")),
     )
     return (antwort.text or "").strip()
 
 
+async def _chat_mit(backend: str, rolle: AgentenRolle, nutzer: str) -> str:
+    system = _system_anweisung(rolle, backend)
+    if backend == "ollama":
+        return await _ollama_chat(system, nutzer)
+    return await _gemini_chat(system, nutzer)
+
+
 async def frage_agent(rolle: AgentenRolle, nutzer: str) -> str:
-    system = _system_anweisung(rolle)
-    if BACKEND == "ollama":
+    primar = _primares_backend(rolle)
+    ersatz = _ersatz_backend.get(primar)
+    try:
         async with _drossel:
-            return await _ollama_chat(system, nutzer)
-    async with _drossel:
-        return await _gemini_chat(system, nutzer)
+            text = await _chat_mit(primar, rolle, nutzer)
+        _verwendete_backends[rolle.name] = primar
+        return text
+    except Exception as fehler:
+        if ersatz is None:
+            raise
+        print(f"  {rolle.name}: {primar} fehlgeschlagen ({type(fehler).__name__}), weiche auf {ersatz} ...")
+        async with _drossel:
+            text = await _chat_mit(ersatz, rolle, nutzer)
+        _verwendete_backends[rolle.name] = ersatz
+        return text
 
 
-async def agent_recherche(client_placeholder, rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
+async def agent_recherche(rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
     text = (await frage_agent(rolle, auftrag)).strip()
     if not text:
         raise RuntimeError(f"Agent {rolle.name} hat keinen Befund geliefert.")
     return AgentenBefund(agent=rolle.name, befund=text)
 
 
-async def bericht_konsolidieren(client_placeholder, auftrag: str, befunde: list[AgentenBefund]) -> str:
+async def bericht_konsolidieren(auftrag: str, befunde: list[AgentenBefund]) -> str:
     berichts_rolle = AgentenRolle(
         name="bericht-agent", beschreibung="Konsolidiert Befunde", auftrag=BERICHTS_ANWEISUNG
     )
     befunde_text = "\n\n".join(f"### Befund von {befund.agent}\n{befund.befund}" for befund in befunde)
-    bericht = await frage_agent(
+    bericht = (await frage_agent(
         berichts_rolle, f"Auftrag: {auftrag}\n\nBefunde der Agenten:\n\n{befunde_text}"
-    )
+    )).strip()
     if not bericht:
         raise RuntimeError("Berichts-Agent hat keinen Report geliefert.")
     return bericht
 
 
 def report_text(auftrag: str, zeitstempel: datetime, bericht: str, befunde: list[AgentenBefund]) -> str:
+    backends = ", ".join(f"{agent}: {backend}" for agent, backend in sorted(_verwendete_backends.items()))
     kopf = (
         f"# Jarvis Netzwerk-Bericht ({zeitstempel.strftime('%Y-%m-%d %H:%M UTC')})\n\n"
-        f"**Backend:** {BACKEND} | **Auftrag:** {auftrag}\n\n"
+        f"**Backend-Modus:** {BACKEND}\n\n"
+        f"**Genutzte Backends:** {backends or 'unbekannt'}\n\n"
+        f"**Auftrag:** {auftrag}\n\n"
         f"**Agenten:** {', '.join(befund.agent for befund in befunde)}\n\n"
         f"## Einzelbefunde\n\n"
     )
@@ -137,32 +170,34 @@ async def produziere_arbeitsproben(zeitstempel: datetime) -> list[tuple[str, Pat
 
 
 async def main() -> None:
-    if BACKEND == "gemini" and not os.environ.get("GEMINI_API_KEY"):
-        raise SystemExit("GEMINI_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama nutzen).")
+    if BACKEND in ("gemini", "hybrid") and not os.environ.get("GEMINI_API_KEY"):
+        if BACKEND == "gemini":
+            raise SystemExit("GEMINI_API_KEY ist nicht gesetzt (oder NETZWERK_BACKEND=ollama nutzen).")
+        print("Hinweis: Kein GEMINI_API_KEY gesetzt - im Hybrid-Modus uebernimmt Ollama alles.")
 
     auftrag = " ".join(sys.argv[1:]) or STANDARD_AUFTRAG
     zeitstempel = datetime.now(timezone.utc)
 
-    print(f"Backend: {BACKEND} | {len(AGENTEN_ROLLEN)} Recherche- + {len(GESCHAEFTS_AGENTEN)} Geschaefts-Agenten")
+    print(f"Backend-Modus: {BACKEND} | {len(AGENTEN_ROLLEN)} Recherche- + {len(GESCHAEFTS_AGENTEN)} Geschaefts-Agenten")
 
     proben = await produziere_arbeitsproben(zeitstempel)
     for name, pfad in proben:
         print(f"  Arbeitsprobe {name}: {pfad}")
 
     print(f"Starte {len(AGENTEN_ROLLEN)} Recherche-Agenten parallel ...")
-    befunde = list(
-        await asyncio.gather(*(agent_recherche(None, rolle, auftrag) for rolle in AGENTEN_ROLLEN))
-    )
+    befunde = list(await asyncio.gather(*(agent_recherche(rolle, auftrag) for rolle in AGENTEN_ROLLEN)))
     for befund in befunde:
         print(f"  OK {befund.agent}: {len(befund.befund)} Zeichen")
 
     print("Konsolidiere Bericht ...")
-    bericht = await bericht_konsolidieren(None, auftrag, befunde)
+    bericht = await bericht_konsolidieren(auftrag, befunde)
 
     pfad = REPORTS_DIR / f"{zeitstempel.strftime('%Y-%m-%d')}-netzwerk-bericht.md"
     pfad.parent.mkdir(parents=True, exist_ok=True)
     pfad.write_text(report_text(auftrag, zeitstempel, bericht, befunde), encoding="utf-8")
     print(f"Bericht gespeichert: {pfad}")
+
+    print("Backend-Verteilung:", ", ".join(f"{a}={b}" for a, b in sorted(_verwendete_backends.items())))
 
 
 if __name__ == "__main__":

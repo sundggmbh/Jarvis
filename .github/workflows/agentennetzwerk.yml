@@ -28,7 +28,7 @@ jobs:
           python-version: "3.12"
 
       - name: Abhängigkeiten installieren
-        run: pip install google-genai pydantic
+        run: pip install google-genai pydantic httpx
 
       - name: Agentennetzwerk ausführen
         env:
