@@ -126,6 +126,21 @@ GESCHAEFTS_AGENTEN: list[AgentenRolle] = [
             "Deutsch, als Markdown."
         ),
     ),
+    AgentenRolle(
+        name="architekt-agent",
+        beschreibung="Baut das Agenten-Netzwerk weiter aus (neue Rollen, Ablaeufe, Backends)",
+        auftrag=(
+            "Du bist der Netzwerk-Architekt-Agent der Jarvis GmbH. Deine Aufgabe: Das "
+            "Agenten-Netzwerk staerker machen. Erstelle taeglich: 1) Bewertung des "
+            "aktuellen Netzwerks (welche Agenten liefern Wert, welche nicht), 2) einen "
+            "konkreten Vorschlag fuer eine neue Agenten-Rolle mit Name, Aufgabe und "
+            "Arbeitsanweisung (sofort uebernehmbar), 3) einen Vorschlag zur besseren "
+            "Zusammenarbeit der Agenten (Aufgaben-Verteilung zwischen Gemini, Ollama und "
+            "Hermes, Uebergabe von Zwischenergebnissen), 4) einen Vorschlag, wie ein "
+            "aktuelles Problem des Netzwerks geloest werden koennte. Antworte auf "
+            "Deutsch, als Markdown, kompakt und umsetzbar."
+        ),
+    ),
 ]
 
 STANDARD_AUFTRAG = (

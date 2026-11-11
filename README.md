@@ -26,6 +26,7 @@ Ein Netzwerk aus spezialisierten KI-Recherche-Agenten. Alle Agenten laufen **par
 | `katalog-agent` | Produkttext-Proben Vorher/Nachher (1.500–6.000 €/Projekt) |
 | `automatisierungs-agent` | Komplettes Angebots-Paket für KMU (2.000–10.000 € Setup) |
 | `akquise-agent` | Zielgruppen-Profile und Anschreiben-Vorlagen (nur Vorbereitung, kein Versand) |
+| `architekt-agent` | Baut das Netzwerk weiter aus: neue Rollen, Zusammenarbeit, Problemlösungen |
 
 ### Neuen Agenten rekrutieren
 
@@ -73,6 +74,50 @@ NETZWERK_BACKEND=ollama python scripts/agentennetzwerk.py
 ```
 
 Andere Modelle: `OLLAMA_MODELL=llama3.1:8b` (oder `qwen2.5:14b` für bessere Qualität, braucht mehr RAM). Hinweis: Lokale Modelle sind schwächer als Gemini – gut für Texte und Struktur, schwächer bei Fakten.
+
+## Hermes als drittes Backend
+
+[Hermes](https://ollama.com/library/hermes3) ist ein freies Modell von Nous Research und läuft wie Ollama komplett lokal – das Netzwerk kann Aufträge also auf drei Backends verteilen: **Gemini (Internet) + Ollama (lokal) + Hermes (lokal)**. Fällt ein Backend aus, springt die Kette automatisch weiter: Gemini → Ollama → Hermes.
+
+1. Hermes-Modell laden: `ollama pull hermes3:8b`
+2. Netzwerk mit Hermes als einzigem Backend starten:
+
+```bash
+NETZWERK_BACKEND=hermes python scripts/agentennetzwerk.py
+```
+
+3. Oder alle drei gleichzeitig nutzen (Hybrid über drei Backends):
+
+```bash
+NETZWERK_BACKEND=hybrid python scripts/agentennetzwerk.py
+```
+
+Anderes Hermes-Modell: `HERMES_MODELL=hermes3:8b` (Umgebungsvariable).
+
+## Telegram-Fernsteuerung (Handy → Agenten)
+
+Mit einem Telegram-Bot kann das Netzwerk vom Android-Handy aus gesteuert werden – kostenlos:
+
+1. In Telegram nach **@BotFather** suchen, `/newbot` senden, Namen vergeben, den **Bot-Token** notieren.
+2. Einen GitHub-Token erstellen: [github.com/settings/tokens](https://github.com/settings/tokens) → „Generate new token (classic)“ → Häkchen bei **repo** und **workflow** → Token notieren.
+3. Auf dem Windows-PC starten:
+
+```bash
+pip install httpx
+set TELEGRAM_BOT_TOKEN=<Bot-Token von BotFather>
+set GITHUB_TOKEN=<GitHub-Token>
+python scripts/telegram_bot.py
+```
+
+4. Den eigenen Bot in Telegram öffnen, es funktionieren:
+
+| Befehl | Wirkung |
+|---|---|
+| `/status` | Zeigt, ob die Agenten gerade arbeiten (letzte 3 Läufe) |
+| `/bericht` | Startet einen vollen Netzwerk-Lauf (Arbeitsproben + Bericht) |
+| `/auftrag <Text>` | Gibt den Agenten einen eigenen Auftrag |
+
+Der Bot muss auf dem PC laufen (Fenster offen lassen). Er schickt die Aufträge an GitHub, die Agenten laufen dort in der Cloud – das Handy braucht also nur Telegram.
 
 ## Struktur
 

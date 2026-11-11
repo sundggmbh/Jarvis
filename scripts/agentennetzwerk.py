@@ -24,6 +24,7 @@ MODEL = os.environ.get("GEMINI_MODELL", "gemini-3.8-flash")
 MIT_SUCHE = os.environ.get("NETZWERK_MIT_SUCHE", "0") == "1"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODELL = os.environ.get("OLLAMA_MODELL", "llama3.1:8b")
+HERMES_MODELL = os.environ.get("HERMES_MODELL", "hermes3:8b")
 MAX_PARALLEL = int(os.environ.get("NETZWERK_MAX_PARALLEL", "3"))
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,11 @@ REPORTS_DIR = REPO_ROOT / "reports"
 AUSGABEN_DIR = REPO_ROOT / "ausgaben"
 
 _drossel = asyncio.Semaphore(MAX_PARALLEL)
-_ersatz_backend = {"gemini": "ollama", "ollama": "gemini"}
+_ersatz_ketten = {
+    "gemini": ["ollama", "hermes"],
+    "ollama": ["gemini", "hermes"],
+    "hermes": ["gemini", "ollama"],
+}
 _verwendete_backends: dict[str, str] = {}
 _backend_status: dict[str, bool | None] = {"ollama": None}
 
@@ -39,11 +44,11 @@ _bekannte_namen = sorted(rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGE
 
 
 def _primares_backend(rolle: AgentenRolle) -> str:
-    if BACKEND in ("gemini", "ollama"):
+    if BACKEND in ("gemini", "ollama", "hermes"):
         return BACKEND
     if BACKEND == "hybrid":
-        if rolle.name in _bekannte_namen and _bekannte_namen.index(rolle.name) % 2 == 1:
-            return "ollama"
+        if rolle.name in _bekannte_namen:
+            return ("gemini", "ollama", "hermes")[_bekannte_namen.index(rolle.name) % 3]
         return "gemini"
     raise ValueError(f"Unbekanntes Backend: {BACKEND}")
 
@@ -55,9 +60,9 @@ def _system_anweisung(rolle: AgentenRolle, backend: str) -> str:
             "Hinweis: Du hast keinen Internetzugang. Arbeite mit deinem eigenen Wissen und "
             "kennzeichne veraltete oder unsichere Angaben als offen. " + system
         )
-    if backend == "ollama":
+    if backend in ("ollama", "hermes"):
         system = (
-            "Hinweis: Du laeuft lokal ohne Internetzugang. Arbeite mit deinem eigenen Wissen "
+            "Hinweis: Du arbeitest lokal ohne Internetzugang. Nutze dein eigenes Wissen "
             "und kennzeichne unsichere Angaben als offen. " + system
         )
     return system
@@ -69,12 +74,12 @@ def _tools(backend: str) -> list | None:
     return [types.Tool(google_search=types.GoogleSearch())]
 
 
-async def _ollama_chat(system: str, nutzer: str) -> str:
+async def _ollama_chat(system: str, nutzer: str, modell: str = "") -> str:
     async with httpx.AsyncClient(timeout=600) as client:
         antwort = await client.post(
             f"{OLLAMA_URL}/api/chat",
             json={
-                "model": OLLAMA_MODELL,
+                "model": modell or OLLAMA_MODELL,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": nutzer},
@@ -84,6 +89,10 @@ async def _ollama_chat(system: str, nutzer: str) -> str:
         )
         antwort.raise_for_status()
         return antwort.json()["message"]["content"].strip()
+
+
+async def _hermes_chat(system: str, nutzer: str) -> str:
+    return await _ollama_chat(system, nutzer, modell=HERMES_MODELL)
 
 
 async def _gemini_chat(system: str, nutzer: str) -> str:
@@ -100,6 +109,8 @@ async def _chat_mit(backend: str, rolle: AgentenRolle, nutzer: str) -> str:
     system = _system_anweisung(rolle, backend)
     if backend == "ollama":
         return await _ollama_chat(system, nutzer)
+    if backend == "hermes":
+        return await _hermes_chat(system, nutzer)
     return await _gemini_chat(system, nutzer)
 
 
@@ -128,10 +139,10 @@ def _kurz(fehler: Exception) -> str:
 
 async def frage_agent(rolle: AgentenRolle, nutzer: str) -> str:
     primar = _primares_backend(rolle)
-    ersatz = _ersatz_backend.get(primar)
     plan: list[tuple[str, int]] = [(primar, 4)]
-    if ersatz and await _backend_verfuegbar(ersatz):
-        plan.append((ersatz, 1))
+    for ersatz in _ersatz_ketten.get(primar, []):
+        if await _backend_verfuegbar(ersatz):
+            plan.append((ersatz, 1))
 
     letzter_fehler: Exception | None = None
     for backend, max_versuche in plan:
@@ -237,9 +248,12 @@ async def main() -> None:
 
     print(f"Backend-Modus: {BACKEND} | {len(AGENTEN_ROLLEN)} Recherche- + {len(GESCHAEFTS_AGENTEN)} Geschaefts-Agenten")
 
-    proben = await produziere_arbeitsproben(zeitstempel)
-    for name, pfad in proben:
-        print(f"  Arbeitsprobe {name}: {pfad}")
+    if os.environ.get("NETZWERK_MIT_PROBEN", "1") == "1":
+        proben = await produziere_arbeitsproben(zeitstempel)
+        for name, pfad in proben:
+            print(f"  Arbeitsprobe {name}: {pfad}")
+    else:
+        print("Arbeitsproben uebersprungen (NETZWERK_MIT_PROBEN=0) - spart Google-Kontingent.")
 
     print(f"Starte {len(AGENTEN_ROLLEN)} Recherche-Agenten parallel ...")
 

@@ -63,33 +63,62 @@ async def test_ollama_backend_wird_genutzt(script, monkeypatch):
     assert modul._verwendete_backends["content-agent"] == "ollama"
 
 
-async def test_hybrid_teilt_agenten_auf_beide_backends(script, monkeypatch):
+async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "hybrid")
     modul = _lade_script()
     modul._verwendete_backends.clear()
     modul._backend_status["ollama"] = True
 
-    gemini_namen = []
-    ollama_namen = []
-
     async def fake_gemini(system, nutzer):
-        gemini_namen.append(system)
         return "g"
 
     async def fake_ollama(system, nutzer):
-        ollama_namen.append(system)
         return "o"
+
+    async def fake_hermes(system, nutzer):
+        return "h"
 
     monkeypatch.setattr(modul, "_gemini_chat", fake_gemini)
     monkeypatch.setattr(modul, "_ollama_chat", fake_ollama)
+    monkeypatch.setattr(modul, "_hermes_chat", fake_hermes)
 
     for name in modul._bekannte_namen:
         await modul.frage_agent(_rolle(name), "hallo")
 
-    assert gemini_namen and ollama_namen
-    assert len(gemini_namen) + len(ollama_namen) == len(modul._bekannte_namen)
     verteilung = set(modul._verwendete_backends.values())
-    assert verteilung == {"gemini", "ollama"}
+    assert verteilung == {"gemini", "ollama", "hermes"}
+    assert len(modul._verwendete_backends) == len(modul._bekannte_namen)
+
+
+async def test_hermes_backend_wird_genutzt(script, monkeypatch):
+    monkeypatch.setenv("NETZWERK_BACKEND", "hermes")
+    modul = _lade_script()
+    modul._verwendete_backends.clear()
+
+    async def fake(system, nutzer):
+        return "Hermes-Antwort"
+
+    monkeypatch.setattr(modul, "_hermes_chat", fake)
+    text = await modul.frage_agent(_rolle("content-agent"), "hallo")
+    assert text == "Hermes-Antwort"
+    assert modul._verwendete_backends["content-agent"] == "hermes"
+
+
+async def test_fallback_kette_bis_hermes(script, monkeypatch):
+    script._backend_status["ollama"] = True
+
+    async def kaputt(system, nutzer):
+        raise RuntimeError("Ausfall")
+
+    async def hermes_ok(system, nutzer):
+        return "Hermes-Ersatz"
+
+    monkeypatch.setattr(script, "_gemini_chat", kaputt)
+    monkeypatch.setattr(script, "_ollama_chat", kaputt)
+    monkeypatch.setattr(script, "_hermes_chat", hermes_ok)
+    text = await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
+    assert text == "Hermes-Ersatz"
+    assert script._verwendete_backends["marktchancen-agent"] == "hermes"
 
 
 async def test_fallback_gemini_zu_ollama(script, monkeypatch):
@@ -140,8 +169,12 @@ async def test_beide_backends_fehlgeschlagen(script, monkeypatch):
     async def kaputt(system, nutzer):
         raise RuntimeError("Ausfall")
 
+    async def kaputt2(system, nutzer):
+        raise RuntimeError("Ausfall")
+
     monkeypatch.setattr(script, "_gemini_chat", kaputt)
     monkeypatch.setattr(script, "_ollama_chat", kaputt)
+    monkeypatch.setattr(script, "_hermes_chat", kaputt2)
     with pytest.raises(RuntimeError):
         await script.frage_agent(_rolle("marktchancen-agent"), "hallo")
 
@@ -225,7 +258,7 @@ async def test_arbeitsproben_landen_im_freigabe_ordner(script, monkeypatch, tmp_
 
     monkeypatch.setattr(script, "_gemini_chat", fake)
     ergebnis = await script.produziere_arbeitsproben(__import__("datetime").datetime(2026, 11, 12))
-    assert len(ergebnis) == 5
+    assert len(ergebnis) == 6
     for name, pfad in ergebnis:
         assert pfad.parent.name == "2026-11-12"
         assert pfad.read_text(encoding="utf-8").startswith(f"# Arbeitsprobe: {name}")
@@ -256,7 +289,7 @@ def test_agenten_rollen_sind_vollstaendig(script):
     from shared.rollen import AGENTEN_ROLLEN, GESCHAEFTS_AGENTEN
 
     assert len(AGENTEN_ROLLEN) == 4
-    assert len(GESCHAEFTS_AGENTEN) == 5
+    assert len(GESCHAEFTS_AGENTEN) == 6
     namen = {rolle.name for rolle in AGENTEN_ROLLEN + GESCHAEFTS_AGENTEN}
     assert {
         "marktchancen-agent",
@@ -268,6 +301,7 @@ def test_agenten_rollen_sind_vollstaendig(script):
         "katalog-agent",
         "automatisierungs-agent",
         "akquise-agent",
+        "architekt-agent",
     } <= namen
 
 
