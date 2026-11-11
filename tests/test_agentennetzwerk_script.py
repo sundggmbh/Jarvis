@@ -65,8 +65,6 @@ async def test_ollama_backend_wird_genutzt(script, monkeypatch):
 
 async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     monkeypatch.setenv("NETZWERK_BACKEND", "hybrid")
-    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
-    monkeypatch.setattr(script, "CLOUD2_API_KEY", "test-key2")
     modul = _lade_script()
     modul._verwendete_backends.clear()
     modul._backend_status["ollama"] = True
@@ -80,23 +78,19 @@ async def test_hybrid_teilt_agenten_auf_alle_backends(script, monkeypatch):
     async def fake_hermes(system, nutzer):
         return "h"
 
-    async def fake_cloud(system, nutzer):
-        return "c"
-
-    async def fake_cloud2(system, nutzer):
-        return "c2"
+    async def fake_cloud(backend, system, nutzer):
+        return backend
 
     monkeypatch.setattr(modul, "_gemini_chat", fake_gemini)
     monkeypatch.setattr(modul, "_ollama_chat", fake_ollama)
     monkeypatch.setattr(modul, "_hermes_chat", fake_hermes)
     monkeypatch.setattr(modul, "_cloud_chat", fake_cloud)
-    monkeypatch.setattr(modul, "_cloud2_chat", fake_cloud2)
 
     for name in modul._bekannte_namen:
         await modul.frage_agent(_rolle(name), "hallo")
 
     verteilung = set(modul._verwendete_backends.values())
-    assert verteilung == {"gemini", "ollama", "hermes", "cloud", "cloud2"}
+    assert verteilung == set(modul._hybrid_reihenfolge)
     assert len(modul._verwendete_backends) == len(modul._bekannte_namen)
 
 
@@ -120,7 +114,7 @@ async def test_cloud_backend_wird_genutzt(script, monkeypatch):
     modul = _lade_script()
     modul._verwendete_backends.clear()
 
-    async def fake(system, nutzer):
+    async def fake(backend, system, nutzer):
         return "Cloud-Antwort"
 
     monkeypatch.setattr(modul, "_cloud_chat", fake)
@@ -134,10 +128,10 @@ async def test_cloud2_backend_wird_genutzt(script, monkeypatch):
     modul = _lade_script()
     modul._verwendete_backends.clear()
 
-    async def fake(system, nutzer):
+    async def fake(backend, system, nutzer):
         return "Cloud2-Antwort"
 
-    monkeypatch.setattr(modul, "_cloud2_chat", fake)
+    monkeypatch.setattr(modul, "_cloud_chat", fake)
     text = await modul.frage_agent(_rolle("risiko-agent"), "hallo")
     assert text == "Cloud2-Antwort"
     assert modul._verwendete_backends["risiko-agent"] == "cloud2"
@@ -145,12 +139,12 @@ async def test_cloud2_backend_wird_genutzt(script, monkeypatch):
 
 async def test_fallback_gemini_zu_cloud_ohne_ollama(script, monkeypatch):
     script._backend_status["ollama"] = False
-    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
+    script._cloud_stellen["cloud"] = ("https://test.example", "test-key", "test-modell")
 
     async def kaputt(system, nutzer):
         raise RuntimeError("Gemini nicht erreichbar")
 
-    async def cloud_ok(system, nutzer):
+    async def cloud_ok(backend, system, nutzer):
         return "Cloud-Ersatz"
 
     monkeypatch.setattr(script, "_gemini_chat", kaputt)
@@ -277,15 +271,11 @@ async def test_backend_verfuegbar_erkennung(script, monkeypatch):
     assert script._backend_status["ollama"] is True
     assert await script._backend_verfuegbar("gemini") is True
 
-    monkeypatch.setattr(script, "CLOUD_API_KEY", "")
-    assert await script._backend_verfuegbar("cloud") is False
-    monkeypatch.setattr(script, "CLOUD_API_KEY", "test-key")
-    assert await script._backend_verfuegbar("cloud") is True
-
-    monkeypatch.setattr(script, "CLOUD2_API_KEY", "")
-    assert await script._backend_verfuegbar("cloud2") is False
-    monkeypatch.setattr(script, "CLOUD2_API_KEY", "test-key2")
-    assert await script._backend_verfuegbar("cloud2") is True
+    for name in script._cloud_namen:
+        script._cloud_stellen[name] = ("https://test.example", "", "modell")
+        assert await script._backend_verfuegbar(name) is False
+        script._cloud_stellen[name] = ("https://test.example", "test-key", "modell")
+        assert await script._backend_verfuegbar(name) is True
 
 
 def test_tools_nur_bei_gemini_mit_suche(script, monkeypatch):

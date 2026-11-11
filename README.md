@@ -101,7 +101,7 @@ Anderes Hermes-Modell: `HERMES_MODELL=hermes3:8b` (Umgebungsvariable).
 
 ## Zusätzliche Gratis-Cloud (OpenRouter / Groq / Cerebras)
 
-Neben Gemini kann ein zweiter Cloud-Anbieter mit OpenAI-Schnittstelle eingebunden werden (Backend-Name: `cloud`). Alle drei bieten kostenlose Kontingente – der Schlüssel bleibt immer auf dem eigenen PC:
+Neben Gemini können zusätzliche Cloud-Anbieter mit OpenAI-Schnittstelle eingebunden werden. Das Netzwerk hat **6 Cloud-Steckplätze** (`cloud` bis `cloud6`), die frei belegt werden können – der Schlüssel bleibt immer auf dem eigenen PC:
 
 | Anbieter | Schlüssel holen | Basis-URL | Beispiel-Modell (gratis) | Hinweis |
 |---|---|---|---|---|
@@ -114,6 +114,19 @@ Neben Gemini kann ein zweiter Cloud-Anbieter mit OpenAI-Schnittstelle eingebunde
 | NVIDIA NIM | build.nvidia.com → Modell → API Key | `https://integrate.api.nvidia.com/v1` | `meta/llama-3.1-8b-instruct` | Nur E-Mail nötig; 40 Anfragen/Minute |
 
 Nicht mehr gratis ohne Karte: Cerebras (seit Juli 2026 nur mit Kreditkarte), GitHub Models (eingestellt), Together AI (5 $ Mindestkauf).
+
+**Steckplatz-Übersicht (Standard-Belegung, per Umgebungsvariable änderbar):**
+
+| Steckplatz | Standard-Anbieter | Umgebungsvariablen |
+|---|---|---|
+| `cloud` | OpenRouter | `CLOUD_API_KEY`, `CLOUD_BASE_URL`, `CLOUD_MODELL` |
+| `cloud2` | Groq | `CLOUD2_API_KEY`, `CLOUD2_BASE_URL`, `CLOUD2_MODELL` |
+| `cloud3` | Mistral | `CLOUD3_API_KEY`, `CLOUD3_BASE_URL`, `CLOUD3_MODELL` |
+| `cloud4` | Cohere | `CLOUD4_API_KEY`, `CLOUD4_BASE_URL`, `CLOUD4_MODELL` |
+| `cloud5` | NVIDIA NIM | `CLOUD5_API_KEY`, `CLOUD5_BASE_URL`, `CLOUD5_MODELL` |
+| `cloud6` | Hugging Face | `CLOUD6_API_KEY`, `CLOUD6_BASE_URL`, `CLOUD6_MODELL` |
+
+Steckplätze ohne Schlüssel werden automatisch übersprungen. Im Hybrid-Modus verteilt das Netzwerk die Agenten auf alle verfügbaren Kraftquellen (Gemini + alle belegten Cloud-Steckplätze + Ollama + Hermes).
 
 ```bash
 set CLOUD_API_KEY=<dein Schluessel>
