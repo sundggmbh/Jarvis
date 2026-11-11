@@ -231,13 +231,31 @@ async def agent_recherche(rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
     return AgentenBefund(agent=rolle.name, befund=text)
 
 
+MAX_BEFUND_ZEICHEN = int(os.environ.get("NETZWERK_MAX_BEFUND_ZEICHEN", "5000"))
+MAX_BEFUNDE_GESAMT = int(os.environ.get("NETZWERK_MAX_BEFUNDE_GESAMT", "22000"))
+
+
+def _gekuerzt(text: str, maximum: int) -> str:
+    if len(text) <= maximum:
+        return text
+    return text[:maximum] + " ... [gekuerzt, Volltext siehe Einzelbefunde]"
+
+
 async def bericht_konsolidieren(auftrag: str, befunde: list[AgentenBefund]) -> str:
     berichts_rolle = AgentenRolle(
         name="bericht-agent", beschreibung="Konsolidiert Befunde", auftrag=BERICHTS_ANWEISUNG
     )
-    befunde_text = "\n\n".join(f"### Befund von {befund.agent}\n{befund.befund}" for befund in befunde)
+    teile: list[str] = []
+    gesamt = 0
+    for befund in befunde:
+        stueck = _gekuerzt(befund.befund, MAX_BEFUND_ZEICHEN)
+        if gesamt + len(stueck) > MAX_BEFUNDE_GESAMT:
+            stueck = _gekuerzt(stueck, max(500, MAX_BEFUNDE_GESAMT - gesamt))
+        gesamt += len(stueck)
+        teile.append(f"### Befund von {befund.agent}\n{stueck}")
+    befunde_text = "\n\n".join(teile)
     bericht = (await frage_agent(
-        berichts_rolle, f"Auftrag: {auftrag}\n\nBefunde der Agenten:\n\n{befunde_text}"
+        berichts_rolle, f"Auftrag: {auftrag}\n\nBefunde der Agenten (gekuerzt):\n\n{befunde_text}"
     )).strip()
     if not bericht:
         raise RuntimeError("Berichts-Agent hat keinen Report geliefert.")
