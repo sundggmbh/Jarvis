@@ -4,50 +4,40 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import mistralai
-from mistralai.client.models import MessageOutputEntry, TextChunk, WebSearchTool
+from google import genai
+from google.genai import types
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from shared.rollen import AGENTEN_ROLLEN, BERICHTS_ANWEISUNG, STANDARD_AUFTRAG, AgentenBefund, AgentenRolle  # noqa: E402
 
-MODEL = "mistral-medium-latest"
+MODEL = "gemini-2.5-flash"
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 
 
-def text_aus_antwort(antwort) -> str:
-    teile = []
-    for eintrag in antwort.outputs:
-        if isinstance(eintrag, MessageOutputEntry):
-            for inhalt in eintrag.content:
-                if isinstance(inhalt, TextChunk) and inhalt.text.strip():
-                    teile.append(inhalt.text.strip())
-    return "\n\n".join(teile).strip()
-
-
-async def agent_recherche(client: mistralai.client.Mistral, rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
-    antwort = await client.beta.conversations.start_async(
+async def agent_recherche(client: genai.Client, rolle: AgentenRolle, auftrag: str) -> AgentenBefund:
+    antwort = await client.aio.models.generate_content(
         model=MODEL,
-        instructions=rolle.auftrag,
-        inputs=auftrag,
-        tools=[WebSearchTool()],
-        store=False,
+        contents=auftrag,
+        config=types.GenerateContentConfig(
+            system_instruction=rolle.auftrag,
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+        ),
     )
-    befund = text_aus_antwort(antwort)
+    befund = (antwort.text or "").strip()
     if not befund:
         raise RuntimeError(f"Agent {rolle.name} hat keinen Befund geliefert.")
     return AgentenBefund(agent=rolle.name, befund=befund)
 
 
-async def bericht_konsolidieren(client: mistralai.client.Mistral, auftrag: str, befunde: list[AgentenBefund]) -> str:
+async def bericht_konsolidieren(client: genai.Client, auftrag: str, befunde: list[AgentenBefund]) -> str:
     befunde_text = "\n\n".join(f"### Befund von {befund.agent}\n{befund.befund}" for befund in befunde)
-    antwort = await client.beta.conversations.start_async(
+    antwort = await client.aio.models.generate_content(
         model=MODEL,
-        instructions=BERICHTS_ANWEISUNG,
-        inputs=f"Auftrag: {auftrag}\n\nBefunde der Agenten:\n\n{befunde_text}",
-        store=False,
+        contents=f"Auftrag: {auftrag}\n\nBefunde der Agenten:\n\n{befunde_text}",
+        config=types.GenerateContentConfig(system_instruction=BERICHTS_ANWEISUNG),
     )
-    bericht = text_aus_antwort(antwort)
+    bericht = (antwort.text or "").strip()
     if not bericht:
         raise RuntimeError("Berichts-Agent hat keinen Report geliefert.")
     return bericht
@@ -65,13 +55,13 @@ def report_text(auftrag: str, zeitstempel: datetime, bericht: str, befunde: list
 
 
 async def main() -> None:
-    api_key = os.environ.get("MISTRAL_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise SystemExit("MISTRAL_API_KEY ist nicht gesetzt. In .env oder Umgebungsvariable eintragen.")
+        raise SystemExit("GEMINI_API_KEY ist nicht gesetzt. In .env oder Umgebungsvariable eintragen.")
 
     auftrag = " ".join(sys.argv[1:]) or STANDARD_AUFTRAG
 
-    client = mistralai.client.Mistral(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     zeitstempel = datetime.now(timezone.utc)
 
     print(f"Starte {len(AGENTEN_ROLLEN)} Agenten parallel ...")
