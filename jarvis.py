@@ -126,7 +126,6 @@ def verarbeite(befehl):
             sprich("Der Befehl wurde ausgeführt.")
 
     else:
-        sprich("Ich frage kurz meine Antwortmaschine ...")
         sprich(frage_ollama(befehl))
 
     return True
