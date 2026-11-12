@@ -11,9 +11,10 @@ def _lade_script():
     return modul
 
 
-def test_drei_auftraege_vorhanden():
+def test_vier_optionen_vorhanden():
     script = _lade_script()
     assert set(script.AUFTRAEGE) == {"1", "2", "3"}
+    assert script.ALLE == "4"
     namen = [name for name, _ in script.AUFTRAEGE.values()]
     assert namen == ["Bretten-Recherche", "Micro-Audit-Angebot", "Standardauftrag"]
 

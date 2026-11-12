@@ -20,6 +20,8 @@ AUFTRAEGE = {
     "3": ("Standardauftrag", STANDARD_AUFTRAG),
 }
 
+ALLE = "4"
+
 
 def kopieren(text: str) -> None:
     import tkinter as tk
@@ -32,25 +34,46 @@ def kopieren(text: str) -> None:
     root.destroy()
 
 
-def auswahl() -> str:
+def menue_zeigen() -> None:
     print("Welchen Auftrag sollen die Agenten bekommen?")
     for taste, (name, _) in AUFTRAEGE.items():
         print(f"  [{taste}] {name}")
-    wahl = input("Nummer eintippen und Enter drücken: ").strip()
-    if wahl not in AUFTRAEGE:
-        print("Unbekannte Nummer - nichts kopiert.")
-        raise SystemExit(1)
-    return wahl
+    print(f"  [{ALLE}] ALLE DREI nacheinander starten")
+
+
+def eine_starten(taste: str, nummer: int = 1) -> None:
+    name, text = AUFTRAEGE[taste]
+    kopieren(text)
+    print(f"\n{nummer}. Auftrag '{name}' ist kopiert ({len(text)} Zeichen).")
+    print("   Jetzt im Browser:")
+    print(f"   1) Diese Seite oeffnen: {GITHUB_SEITE}")
+    print("   2) 'Run workflow' klicken")
+    print("   3) Strg+V zum Einfuegen")
+    print("   4) Gruenen Knopf 'Run workflow' druecken")
+    try:
+        webbrowser.open(GITHUB_SEITE)
+    except Exception:
+        print("   (Seite konnte nicht automatisch geoeffnet werden - Link oben von Hand oeffnen.)")
+
+
+def alle_starten() -> None:
+    for nummer, taste in enumerate(AUFTRAEGE, start=1):
+        eine_starten(taste, nummer)
+        if nummer < len(AUFTRAEGE):
+            input("\nWenn eingefuegt und gestartet: ENTER druecken fuer den naechsten Auftrag ...")
+    print("\nAlle Auftraege abgearbeitet - die Agenten arbeiten jetzt der Reihe nach!")
 
 
 def main() -> None:
-    wahl = auswahl()
-    name, text = AUFTRAEGE[wahl]
-    kopieren(text)
-    print(f"Auftrag '{name}' ist kopiert ({len(text)} Zeichen).")
-    print("Die GitHub-Seite öffnet sich jetzt ...")
-    webbrowser.open(GITHUB_SEITE)
-    print("Dort: 'Run workflow' klicken -> Strg+V zum Einfuegen -> gruener Knopf.")
+    menue_zeigen()
+    wahl = input("Nummer eintippen und Enter druecken: ").strip()
+    if wahl == ALLE:
+        alle_starten()
+    elif wahl in AUFTRAEGE:
+        eine_starten(wahl)
+    else:
+        print("Unbekannte Nummer - nichts kopiert.")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
