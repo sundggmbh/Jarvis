@@ -376,3 +376,21 @@ async def test_system_anweisung_warnt_ohne_suche(script, monkeypatch):
 
     monkeypatch.setattr(script, "MIT_SUCHE", True)
     assert "keinen Internetzugang" not in script._system_anweisung(rolle, "gemini")
+
+
+def test_auftrag_lesen_env_ueber_argv(script, monkeypatch):
+    monkeypatch.setenv("NETZWERK_AUFTRAG", 'Micro-Audit (Preis: 290 EUR) mit "Anfuehrungszeichen" und Klammern)')
+    monkeypatch.setattr(script.sys, "argv", ["agentennetzwerk.py", "alter", "argv", "auftrag"])
+    assert script._auftrag_lesen().startswith("Micro-Audit")
+
+
+def test_auftrag_lesen_argv_ohne_env(script, monkeypatch):
+    monkeypatch.delenv("NETZWERK_AUFTRAG", raising=False)
+    monkeypatch.setattr(script.sys, "argv", ["agentennetzwerk.py", "kuerzer", "argv", "auftrag"])
+    assert script._auftrag_lesen() == "kuerzer argv auftrag"
+
+
+def test_auftrag_lesen_standard_ohne_alles(script, monkeypatch):
+    monkeypatch.delenv("NETZWERK_AUFTRAG", raising=False)
+    monkeypatch.setattr(script.sys, "argv", ["agentennetzwerk.py"])
+    assert script._auftrag_lesen() == script.STANDARD_AUFTRAG

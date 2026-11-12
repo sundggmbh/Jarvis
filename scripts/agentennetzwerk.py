@@ -314,6 +314,14 @@ async def produziere_arbeitsproben(zeitstempel: datetime) -> list[tuple[str, Pat
     return proben
 
 
+def _auftrag_lesen() -> str:
+    return (
+        os.environ.get("NETZWERK_AUFTRAG", "").strip()
+        or " ".join(sys.argv[1:]).strip()
+        or STANDARD_AUFTRAG
+    )
+
+
 async def main() -> None:
     if BACKEND in ("gemini", "hybrid") and not os.environ.get("GEMINI_API_KEY"):
         if BACKEND == "gemini":
@@ -322,7 +330,7 @@ async def main() -> None:
     if BACKEND in _cloud_stellen and not _cloud_stellen[BACKEND][1]:
         raise SystemExit(f"API-Schluessel fuer {BACKEND} ist nicht gesetzt (oder NETZWERK_BACKEND=ollama/hermes nutzen).")
 
-    auftrag = " ".join(sys.argv[1:]) or STANDARD_AUFTRAG
+    auftrag = _auftrag_lesen()
     zeitstempel = datetime.now(timezone.utc)
 
     print(f"Backend-Modus: {BACKEND} | {len(AGENTEN_ROLLEN)} Recherche- + {len(GESCHAEFTS_AGENTEN)} Geschaefts-Agenten")
