@@ -152,10 +152,13 @@ async def _cloud_chat(backend: str, system: str, nutzer: str) -> str:
 
 async def _gemini_chat(system: str, nutzer: str) -> str:
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    antwort = await client.aio.models.generate_content(
-        model=MODEL,
-        contents=nutzer,
-        config=types.GenerateContentConfig(system_instruction=system, tools=_tools("gemini")),
+    antwort = await asyncio.wait_for(
+        client.aio.models.generate_content(
+            model=MODEL,
+            contents=nutzer,
+            config=types.GenerateContentConfig(system_instruction=system, tools=_tools("gemini")),
+        ),
+        timeout=600,
     )
     return (antwort.text or "").strip()
 
