@@ -1,10 +1,19 @@
 import sys
 
 try:
+    import pyaudio  # noqa: F401
+except ImportError:
+    try:
+        import pyaudiowpatch
+        sys.modules["pyaudio"] = pyaudiowpatch
+    except ImportError:
+        pass
+
+try:
     import speech_recognition as sr
 except ImportError:
     print("FEHLER: SpeechRecognition ist nicht installiert.")
-    print("Nachinstallieren mit: pip install SpeechRecognition pyaudio")
+    print("Nachinstallieren mit: pip install SpeechRecognition PyAudioWPatch")
     sys.exit(1)
 
 print("=== MIKROFON-TEST ===")

@@ -1,6 +1,16 @@
 import os
 import subprocess
+import sys
 from datetime import datetime
+
+try:
+    import pyaudio  # noqa: F401
+except ImportError:
+    try:
+        import pyaudiowpatch
+        sys.modules["pyaudio"] = pyaudiowpatch
+    except ImportError:
+        pass
 
 try:
     import pyttsx3
@@ -147,5 +157,5 @@ def schleife_mit_tastatur():
 if __name__ == "__main__":
     if speech_recognition is None:
         print("Hinweis: Spracherkennung nicht installiert - Jarvis lauscht auf Tippen.")
-        print("Nachinstallieren mit: pip install SpeechRecognition pyaudio")
+        print("Nachinstallieren mit: pip install SpeechRecognition PyAudioWPatch")
     schleife_mit_mikrofon()
